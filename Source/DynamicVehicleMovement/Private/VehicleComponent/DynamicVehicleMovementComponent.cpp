@@ -1091,46 +1091,6 @@ void UDynamicVehicleSimulation::UpdateConstraintHandles(TArray<FPhysicsConstrain
 /**
  * UDynamicVehicleMovementComponent
  */
-UDynamicVehicleMovementComponent::UDynamicVehicleMovementComponent(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
-{
-	// default values setup
-	PrimaryComponentTick.bCanEverTick = true;
-
-	EngineSetup.InitDefaults();
-	DifferentialSetup.InitDefaults();
-	TransmissionSetup.InitDefaults();
-	SteeringSetup.InitDefaults();
-
-	// It's possible to switch whole systems off if they are not required
-	bMechanicalSimEnabled = true;
-	bSuspensionEnabled = true;
-	bWheelFrictionEnabled = true;
-
-	// new vehicles don't use legacy method where friction forces are applied at wheel rather than wheel contact point 
-	bLegacyWheelFrictionPosition = false;
-
-	WheelTraceCollisionResponses = FCollisionResponseContainer::GetDefaultResponseContainer();
-	WheelTraceCollisionResponses.Vehicle = ECR_Ignore;
-
-#if WITH_EDITOR
-	UFunction* setGearFunc = StaticClass()->FindFunctionByName(FName("SetTargetGear"));
-	if (setGearFunc != nullptr)
-	{
-		setGearFunc->SetMetaData(FName("Category"), TEXT("Game|Components|DynamicVehicleMovement"));
-		setGearFunc->FunctionFlags &= ~FUNC_BlueprintCallable;
-	}
-	for (TFieldIterator<FProperty> propertyIterator(StaticClass()); propertyIterator; ++propertyIterator)
-	{
-		FProperty* Property = *propertyIterator;
-		const FString& CurrentCategory = Property->GetMetaData(TEXT("Category"));
-
-		if ("VehicleSetup" == FName(*CurrentCategory))
-		{
-			Property->SetMetaData(TEXT("Category"), "Dynamic Vehicle Movement|Vehicle Setup");
-		}
-	}
-#endif
-}
 
 // Public
 void UDynamicVehicleMovementComponent::Serialize(FArchive& Ar)
@@ -1154,70 +1114,6 @@ void UDynamicVehicleMovementComponent::PostLoad()
 #endif  // #if WITH_EDITORONLY_DATA
 
 }
-
-#if WITH_EDITOR
-void UDynamicVehicleMovementComponent::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
-{
-	const FName PropertyName = PropertyChangedEvent.Property ? PropertyChangedEvent.Property->GetFName() : NAME_None;
-
-	RecalculateAxles();
-
-	if (editDefaultRanges)
-	{
-		if (gasPedalMinValue >= gasPedalMaxValue)
-		{
-			gasPedalMaxValue = gasPedalMinValue + 1;
-			UE_LOG(LogTemp, Warning, TEXT("Max value for Gas pedal Input can not be lower than minimum value. Setting Max Value to Min Value+1"));
-
-		}
-		if (breakPedalMinValue >= breakPedalMaxValue)
-		{
-			breakPedalMaxValue = breakPedalMinValue + 1;
-			UE_LOG(LogTemp, Warning, TEXT("Max value for Break pedal Input can not be lower than minimum value. Setting Max Value to Min Value+1"));
-
-		}
-		if (steerWheelMinValue >= steerWheelMaxValue)
-		{
-			steerWheelMaxValue = steerWheelMinValue + 1;
-			UE_LOG(LogTemp, Warning, TEXT("Max value for Steering Wheel Input can not be lower than minimum value. Setting Max Value to Min Value+1"));
-
-		}
-		if (clutchPedalMinValue >= clutchPedalMaxValue)
-		{
-			clutchPedalMaxValue = clutchPedalMinValue + 1;
-			UE_LOG(LogTemp, Warning, TEXT("Max value for Clutch pedal Input can not be lower than minimum value. Setting Max Value to Min Value+1"));
-
-		}
-	}
-	if (isVehicleAutomatic!= TransmissionSetup.bUseAutomaticGears)
-	{
-		TransmissionSetup.bUseAutomaticGears = isVehicleAutomatic;
-	}
-	if (!isVehicleAutomatic)
-	{
-		bReverseAsBrake = false;
-		bThrottleAsBrake = false;
-	}
-
-
-	Super::PostEditChangeProperty(PropertyChangedEvent);
-
-}
-
-bool UDynamicVehicleMovementComponent::CanEditChange(const FProperty* InProperty) const
-{
-	const bool ParentVal = Super::CanEditChange(InProperty);
-	if (InProperty->GetFName() == GET_MEMBER_NAME_CHECKED(UDynamicVehicleMovementComponent, bReverseAsBrake))
-	{
-		return ParentVal && isVehicleAutomatic;
-	}
-	if (InProperty->GetFName() == GET_MEMBER_NAME_CHECKED(UDynamicVehicleMovementComponent, bThrottleAsBrake))
-	{
-		return ParentVal && isVehicleAutomatic;
-	}
-	return ParentVal;
-}
-#endif
 
 
 void UDynamicVehicleMovementComponent::FixupSkeletalMesh()
@@ -2988,46 +2884,180 @@ FDynamicWheelSetup::FDynamicWheelSetup()
 
 //CUSTOMIZED FUNCTIONS START HERE
 
+#if WITH_EDITOR
+void UDynamicVehicleMovementComponent::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
+{
+	const FName PropertyName = PropertyChangedEvent.Property ? PropertyChangedEvent.Property->GetFName() : NAME_None;
+
+	RecalculateAxles();
+
+	if (editDefaultRanges)
+	{
+		if (gasPedalMinValue >= gasPedalMaxValue)
+		{
+			gasPedalMaxValue = gasPedalMinValue + 1;
+			UE_LOG(LogTemp, Warning, TEXT("Max value for Gas pedal Input can not be lower than minimum value. Setting Max Value to Min Value+1"));
+
+		}
+		if (breakPedalMinValue >= breakPedalMaxValue)
+		{
+			breakPedalMaxValue = breakPedalMinValue + 1;
+			UE_LOG(LogTemp, Warning, TEXT("Max value for Break pedal Input can not be lower than minimum value. Setting Max Value to Min Value+1"));
+
+		}
+		if (steerWheelMinValue >= steerWheelMaxValue)
+		{
+			steerWheelMaxValue = steerWheelMinValue + 1;
+			UE_LOG(LogTemp, Warning, TEXT("Max value for Steering Wheel Input can not be lower than minimum value. Setting Max Value to Min Value+1"));
+
+		}
+		if (clutchPedalMinValue >= clutchPedalMaxValue)
+		{
+			clutchPedalMaxValue = clutchPedalMinValue + 1;
+			UE_LOG(LogTemp, Warning, TEXT("Max value for Clutch pedal Input can not be lower than minimum value. Setting Max Value to Min Value+1"));
+
+		}
+	}
+	if (isVehicleAutomatic != TransmissionSetup.bUseAutomaticGears)
+	{
+		TransmissionSetup.bUseAutomaticGears = isVehicleAutomatic;
+		if (!isVehicleAutomatic)
+		{
+			vehicleHasHighLowGears = true;
+		}
+	}
+	if (!isVehicleAutomatic)
+	{
+		bReverseAsBrake = false;
+		bThrottleAsBrake = false;
+
+		if (vehicleHasHighLowGears)
+			TransmissionSetup.bUseHighLowRatios = true;
+		else
+			TransmissionSetup.bUseHighLowRatios = false;
+
+	}
+	else if (isVehicleAutomatic)
+	{
+		vehicleHasHighLowGears = false;
+		TransmissionSetup.bUseHighLowRatios = false;
+
+	}
+
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+
+}
+
+bool UDynamicVehicleMovementComponent::CanEditChange(const FProperty* InProperty) const
+{
+	const bool ParentVal = Super::CanEditChange(InProperty);
+	if (InProperty->GetFName() == GET_MEMBER_NAME_CHECKED(UDynamicVehicleMovementComponent, bReverseAsBrake))
+	{
+		return ParentVal && isVehicleAutomatic;
+	}
+	if (InProperty->GetFName() == GET_MEMBER_NAME_CHECKED(UDynamicVehicleMovementComponent, bThrottleAsBrake))
+	{
+		return ParentVal && isVehicleAutomatic;
+	}
+	return ParentVal;
+}
+#endif
+
+UDynamicVehicleMovementComponent::UDynamicVehicleMovementComponent(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
+{
+	// default values setup
+	PrimaryComponentTick.bCanEverTick = true;
+
+	EngineSetup.InitDefaults();
+	DifferentialSetup.InitDefaults();
+	TransmissionSetup.InitDefaults();
+	SteeringSetup.InitDefaults();
+
+	// It's possible to switch whole systems off if they are not required
+	bMechanicalSimEnabled = true;
+	bSuspensionEnabled = true;
+	bWheelFrictionEnabled = true;
+
+	// new vehicles don't use legacy method where friction forces are applied at wheel rather than wheel contact point 
+	bLegacyWheelFrictionPosition = false;
+
+	WheelTraceCollisionResponses = FCollisionResponseContainer::GetDefaultResponseContainer();
+	WheelTraceCollisionResponses.Vehicle = ECR_Ignore;
+
+#if WITH_EDITOR
+	UFunction* setGearFunc = StaticClass()->FindFunctionByName(FName("SetTargetGear"));
+	if (setGearFunc != nullptr)
+	{
+		setGearFunc->SetMetaData(FName("Category"), TEXT("Game|Components|DynamicVehicleMovement"));
+		setGearFunc->FunctionFlags &= ~FUNC_BlueprintCallable;
+	}
+	for (TFieldIterator<FProperty> propertyIterator(StaticClass()); propertyIterator; ++propertyIterator)
+	{
+		FProperty* Property = *propertyIterator;
+		const FString& CurrentCategory = Property->GetMetaData(TEXT("Category"));
+
+		if ("VehicleSetup" == FName(*CurrentCategory))
+		{
+			Property->SetMetaData(TEXT("Category"), "Dynamic Vehicle Movement|Vehicle Setup");
+		}
+	}
+#endif
+}
+
 bool UDynamicVehicleMovementComponent::IsUsingSystem1ForDifferential() const
 {
 	return useSystem1ForDifferential;
 }
+
 bool UDynamicVehicleMovementComponent::SetActiveSystemForDifferential(bool UseSystem1, FString& failureReason)
 {
-	if (CanChangeDifferentialSystem())
+	if (vehicleHasMultipleDifferentials)
 	{
-
-		if (UseSystem1 == useSystem1ForDifferential)
+		if (CanChangeDifferentialSystem())
 		{
-			failureReason = "Trying to change to same differential system. ";
+
+			if (UseSystem1 == useSystem1ForDifferential)
+			{
+				failureReason = "Trying to change to same differential system. ";
+				return false;
+			}
+			else if (UseSystem1 == true)
+			{
+				useSystem1ForDifferential = true;
+			}
+			else if (UseSystem1 == false)
+			{
+				useSystem1ForDifferential = false;
+			}
+
+			CreateVehicle();
+			FixupSkeletalMesh();
+			return true;
+		}
+		else
+		{
+			failureReason = "Not in rest and neutral position";
 			return false;
 		}
-		else if (UseSystem1 == true)
-		{
-			useSystem1ForDifferential = true;
-		}
-		else if (UseSystem1 == false)
-		{
-			useSystem1ForDifferential = false;
-		}
-
-		CreateVehicle();
-		FixupSkeletalMesh();
-		return true;
 	}
 	else
 	{
-		failureReason = "Not in rest and neutral position";
+		failureReason = "Vehicle does not have multiple differential systems";
 		return false;
 	}
 }
 
 bool UDynamicVehicleMovementComponent::CanChangeDifferentialSystem()
 {
-	float currentSpeed = GetForwardSpeedMPH();
-	int currentGear = GetCurrentActiveGear();
-	if (currentGear == 0 && (currentSpeed<1 && currentSpeed>-1))
-		return true;
+	if (vehicleHasMultipleDifferentials)
+	{
+		float currentSpeed = GetForwardSpeedMPH();
+		int currentGear = GetCurrentActiveGear();
+		if (currentGear == 0 && (currentSpeed<1 && currentSpeed>-1))
+			return true;
+		else
+			return false;
+	}
 	else
 		return false;
 }
@@ -3071,8 +3101,17 @@ float UDynamicVehicleMovementComponent::GetCurrentActiveGearRatio() const
 	}
 	else
 	{
-		FHighLowGearCombo combo = TransmissionSetup.GetGearRatio(GetCurrentActiveGear());
-		return GetCurrentGear() % 2 == 0 ? (combo.LowRatio) : (combo.HighRatio);
+		if (TransmissionSetup.bUseHighLowRatios)
+		{
+			FHighLowGearCombo combo = TransmissionSetup.GetGearRatio(GetCurrentActiveGear());
+			return GetCurrentGear() % 2 == 0 ? (combo.LowRatio) : (combo.HighRatio);
+		}
+		else
+		{
+			FSingularGearCombo combo = TransmissionSetup.GetGearRatioSingular(GetCurrentActiveGear());
+			return combo.Ratio;
+		}
+		
 	}
 	
 }
@@ -3084,15 +3123,18 @@ float UDynamicVehicleMovementComponent::GetCurrentActiveGearRatioWithoutFinalGea
 
 bool UDynamicVehicleMovementComponent::IsUsingHighGears() const
 {
-	return usingHighGears;
+	return usingHighGears&&vehicleHasHighLowGears;
 }
 
 void UDynamicVehicleMovementComponent::ChangeTransmissionSystem(bool useHighGears = true)
 {
-	usingHighGears = useHighGears;
-	int currentGear = GetCurrentActiveGear();
-	if (currentGear != 0)
-		SetNewGear(currentGear, true);
+	if (vehicleHasHighLowGears)
+	{
+		usingHighGears = useHighGears;
+		int currentGear = GetCurrentActiveGear();
+		if (currentGear != 0)
+			SetNewGear(currentGear, true);
+	}
 }
 
 float UDynamicVehicleMovementComponent::GetVehicleSpeedInKM_PerHour() const
@@ -3231,11 +3273,11 @@ bool UDynamicVehicleMovementComponent::ApplyClutch(float clutchPedalValue)
 			float currentGearMinimumSpeed;
 			if (currentGear > 0)
 			{
-				currentGearMinimumSpeed = TransmissionSetup.ForwardGearRatios[currentGear - 1].MinimumSpeed;
+				currentGearMinimumSpeed = TransmissionSetup.GetMinimumSpeedForGear(currentGear - 1, true);
 			}
 			else if (currentGear < 0)
 			{
-				currentGearMinimumSpeed = TransmissionSetup.ReverseGearRatios[currentGear * -1 - 1].MinimumSpeed;
+				currentGearMinimumSpeed = TransmissionSetup.GetMinimumSpeedForGear(currentGear * -1 - 1, false);
 			}
 			float throttleWhenLeavingClutch = ((clutchPedalMaxValue - clutchPedalValue) * .5);
 			if (currentVehicleSpeed > currentGearMinimumSpeed)
@@ -3278,28 +3320,51 @@ bool UDynamicVehicleMovementComponent::SetNewGear(int GearNum, bool changeImmedi
 				UpdateVehicleEngineState();
 				return true;
 			}
-			else if (GearNum > 0 && GearNum > TransmissionSetup.ForwardGearRatios.Num())
+
+			if (vehicleHasHighLowGears)
 			{
-				return false;
-			}
-			else if (GearNum < 0 && (-1 * GearNum) > TransmissionSetup.ReverseGearRatios.Num())
-			{
-				return false;
-			}
-			else
-			{
-				if (IsUsingHighGears())
+				if (GearNum > 0 && GearNum > TransmissionSetup.ForwardGearRatios.Num())
 				{
-					Super::SetTargetGear(GearNum > 0 ? (GearNum * 2 - 1) : (GearNum * 2 + 1), changeImmediately);
-					UpdateVehicleEngineState();
+					return false;
+				}
+				else if (GearNum < 0 && (-1 * GearNum) > TransmissionSetup.ReverseGearRatios.Num())
+				{
+					return false;
 				}
 				else
 				{
-					Super::SetTargetGear(GearNum * 2, changeImmediately);
-					UpdateVehicleEngineState();
+					if (IsUsingHighGears())
+					{
+						Super::SetTargetGear(GearNum > 0 ? (GearNum * 2 - 1) : (GearNum * 2 + 1), changeImmediately);
+						UpdateVehicleEngineState();
+					}
+					else
+					{
+						Super::SetTargetGear(GearNum * 2, changeImmediately);
+						UpdateVehicleEngineState();
+					}
+					return true;
 				}
-				return true;
 			}
+			else
+			{
+				if (GearNum > 0 && GearNum > TransmissionSetup.ForwardGearRatiosSingular.Num())
+				{
+					return false;
+				}
+				else if (GearNum < 0 && (-1 * GearNum) > TransmissionSetup.ReverseGearRatiosSingular.Num())
+				{
+					return false;
+				}
+				else
+				{
+					Super::SetTargetGear(GearNum, changeImmediately);
+					UpdateVehicleEngineState();
+					return true;
+				}
+			}
+
+			
 		}
 		return false;
 	}
@@ -3360,11 +3425,11 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 		float minimumSpeed = 0;
 		if (currentGear > 0)
 		{
-			minimumSpeed = TransmissionSetup.ForwardGearRatios[currentGear - 1].MinimumSpeed;
+			minimumSpeed = TransmissionSetup.GetMinimumSpeedForGear(currentGear - 1, true); 
 		}
 		else if (currentGear < 0)
 		{
-			minimumSpeed = TransmissionSetup.ReverseGearRatios[currentGear*-1 - 1].MinimumSpeed;
+			minimumSpeed = TransmissionSetup.GetMinimumSpeedForGear(currentGear * -1 - 1, false); 
 		}
 
 		if (currentVehicleSpeed <= minimumSpeed)
@@ -3522,11 +3587,11 @@ void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
 							float currentEngineRPM = GetEngineRotationSpeed();
 							if (currentGear > 0)
 							{
-								minimumSpeed = TransmissionSetup.ForwardGearRatios[currentGear - 1].MinimumSpeed;
+								minimumSpeed = TransmissionSetup.GetMinimumSpeedForGear(currentGear - 1, true); 
 							}
 							else
 							{
-								minimumSpeed = TransmissionSetup.ReverseGearRatios[currentGear * -1 - 1].MinimumSpeed;
+								minimumSpeed = TransmissionSetup.GetMinimumSpeedForGear(currentGear * -1 - 1, false);
 							}
 
 							if ((minimumSpeed - currentSpeed) > 1 && isVehicleAccelerating == false && (currentEngineRPM <= previousEngineRPM) 
@@ -3546,10 +3611,10 @@ void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
 							float currentEngineRPM = GetEngineRotationSpeed();
 							if (currentGear > 2)
 							{
-								minimumSpeed = TransmissionSetup.ForwardGearRatios[currentGear - 2].MinimumSpeed;
+								minimumSpeed = TransmissionSetup.GetMinimumSpeedForGear(currentGear - 2, true); 
 							}
-							else
-								minimumSpeed = 0;
+							else if(currentGear < -2)
+								minimumSpeed = TransmissionSetup.GetMinimumSpeedForGear(currentGear*-1 - 2, false);  
 
 							if ((minimumSpeed - currentSpeed) > 1 && (currentEngineRPM < previousEngineRPM || UKismetMathLibrary::Abs(currentEngineRPM - EngineSetup.EngineIdleRPM) < .1))
 							{
@@ -3634,5 +3699,10 @@ void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
 
 		currentEngineState = valueToSet;
 	}
+}
+
+bool UDynamicVehicleMovementComponent::ToggleBreakAssist(bool enableBreakAssist)
+{
+	return false;
 }
 

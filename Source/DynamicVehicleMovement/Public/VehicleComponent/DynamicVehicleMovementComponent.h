@@ -415,15 +415,46 @@ struct DYNAMICVEHICLEMOVEMENT_API FHighLowGearCombo
 		return { HighRatio * number, LowRatio * number };
 	}
 
+	
 	//Gear ratio to use when in High Ratio mode
-	UPROPERTY(EditAnywhere, AdvancedDisplay, Category = Setup)
-	float HighRatio; 
+	UPROPERTY(EditAnywhere)
+	float HighRatio = 0; 
 	//Gear ratio to use when in Low Ratio mode
-	UPROPERTY(EditAnywhere, AdvancedDisplay, Category = Setup)
-	float LowRatio; 
+	UPROPERTY(EditAnywhere)
+	float LowRatio = 0; 
 	//Minimum speed is used to calculate engine stall condition when niether throttle nor clutch is pressed appropriately.
 	UPROPERTY(EditAnywhere, AdvancedDisplay, Category = Setup)
 	float MinimumSpeed = 0; 
+
+};
+
+USTRUCT(BlueprintType)
+struct DYNAMICVEHICLEMOVEMENT_API FSingularGearCombo
+{
+	GENERATED_USTRUCT_BODY()
+
+	FSingularGearCombo()
+	{
+		Ratio = 0;
+	}
+
+	FSingularGearCombo(float singleValue)
+	{
+		Ratio = singleValue;
+	}
+
+
+	FSingularGearCombo operator*(float number) const {
+		return { Ratio * number};
+	}
+
+
+	//Gear ratio to use
+	UPROPERTY(EditAnywhere)
+	float Ratio = 0;
+	//Minimum speed is used to calculate engine stall condition when niether throttle nor clutch is pressed appropriately.
+	UPROPERTY(EditAnywhere, AdvancedDisplay, Category = Setup)
+	float MinimumSpeed = 0;
 
 };
 
@@ -447,24 +478,35 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleTransmissionConfig
 	UPROPERTY(/*EditAnywhere, Category = VehicleSetup, meta = (DisplayName = "Automatic Reverse")*/)
 	bool bUseAutoReverse;
 
+	UPROPERTY()
+	bool bUseHighLowRatios = true;
+
 	/** The final gear ratio multiplies the transmission gear ratios.*/
 	UPROPERTY(EditAnywhere, AdvancedDisplay/*, Category = Setup*/)
 	float FinalRatio;
 
 	/** Forward gear ratios */
-	UPROPERTY(EditAnywhere/*, Category = Setup*/, AdvancedDisplay, meta = (EditCondition = "bUseAutomaticGears!=true", EditConditionHides))
+	UPROPERTY(EditAnywhere/*, Category = Setup*/, AdvancedDisplay, meta = (EditCondition = "bUseAutomaticGears!=true&&bUseHighLowRatios", EditConditionHides))
 	TArray<FHighLowGearCombo> ForwardGearRatios;
 
 	/** Reverse gear ratio(s) */
-	UPROPERTY(EditAnywhere, AdvancedDisplay/*, Category = Setup*/, meta = (EditCondition = "bUseAutomaticGears!=true", EditConditionHides))
+	UPROPERTY(EditAnywhere, AdvancedDisplay/*, Category = Setup*/, meta = (EditCondition = "bUseAutomaticGears!=true&&bUseHighLowRatios", EditConditionHides))
 	TArray<FHighLowGearCombo> ReverseGearRatios;
 
+	/** Forward gear ratios */
+	UPROPERTY(EditAnywhere/*, Category = Setup*/, AdvancedDisplay, meta = (EditCondition = "bUseAutomaticGears!=true&&!bUseHighLowRatios", EditConditionHides, DisplayName = "Forward Gear Ratios"))
+	TArray<FSingularGearCombo> ForwardGearRatiosSingular;
+
+	/** Reverse gear ratio(s) */
+	UPROPERTY(EditAnywhere, AdvancedDisplay/*, Category = Setup*/, meta = (EditCondition = "bUseAutomaticGears!=true&&!bUseHighLowRatios", EditConditionHides, DisplayName = "Reverse Gear Ratios"))
+	TArray<FSingularGearCombo> ReverseGearRatiosSingular;
+
 	/** Forward gear ratios for automatic transmission */
-	UPROPERTY(EditAnywhere/*, Category = Setup*/, AdvancedDisplay, meta = (EditCondition = "bUseAutomaticGears==true", EditConditionHides))
+	UPROPERTY(EditAnywhere/*, Category = Setup*/, AdvancedDisplay, meta = (EditCondition = "bUseAutomaticGears==true", EditConditionHides, DisplayName = "Forward Gear Ratios"))
 	TArray<float> ForwardGearRatiosAutomatic;
 
 	/** Reverse gear ratio(s) for automatic transmission*/
-	UPROPERTY(EditAnywhere, AdvancedDisplay/*, Category = Setup*/, meta = (EditCondition = "bUseAutomaticGears==true", EditConditionHides))
+	UPROPERTY(EditAnywhere, AdvancedDisplay/*, Category = Setup*/, meta = (EditCondition = "bUseAutomaticGears==true", EditConditionHides, DisplayName = "Reverse Gear Ratios"))
 	TArray<float> ReverseGearRatiosAutomatic;
 
 	/** Engine Revs at which gear up change ocurrs */
@@ -493,20 +535,25 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleTransmissionConfig
 	{
 		bUseAutomaticGears = false;
 		bUseAutoReverse = false;
+		bUseHighLowRatios = true;
 		FinalRatio = 3.08f;
 
 		ForwardGearRatios.Add(2.85f);
 		ForwardGearRatios.Add(2.02f);
 		ForwardGearRatios.Add(1.35f);
 		ForwardGearRatios.Add(1.0f);
-
 		ReverseGearRatios.Add(2.86f);
+
+		ForwardGearRatiosSingular.Add(2.85f);
+		ForwardGearRatiosSingular.Add(2.02f);
+		ForwardGearRatiosSingular.Add(1.35f);
+		ForwardGearRatiosSingular.Add(1.0f);
+		ReverseGearRatiosSingular.Add(2.86f);
 
 		ForwardGearRatiosAutomatic.Add(2.85f);
 		ForwardGearRatiosAutomatic.Add(2.02f);
 		ForwardGearRatiosAutomatic.Add(1.35f);
 		ForwardGearRatiosAutomatic.Add(1.0f);
-
 		ReverseGearRatiosAutomatic.Add(2.86f);
 
 		ChangeUpRPM = 4500.0f;
@@ -532,6 +579,22 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleTransmissionConfig
 		}
 	}
 
+	FSingularGearCombo GetGearRatioSingular(int32 InGear) const
+	{
+		if (InGear > 0) // a forwards gear
+		{
+			return ForwardGearRatiosSingular[InGear - 1] * FinalRatio;
+		}
+		else if (InGear < 0) // a reverse gear
+		{
+			return ReverseGearRatiosSingular[FMath::Abs(InGear) - 1] * FinalRatio * -1;
+		}
+		else
+		{
+			return 0.f; // neutral has no ratio
+		}
+	}
+
 	float GetGearRatioAutomatic(int32 InGear) const
 	{
 		if (InGear > 0) // a forwards gear
@@ -548,7 +611,28 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleTransmissionConfig
 		}
 	}
 
+	float GetMinimumSpeedForGear(int gearNum, bool forwardRatios) const
+	{
+		if (bUseAutomaticGears)
+			return 0.0f;
+		else if (bUseHighLowRatios)
+		{
+			if(forwardRatios)
+				return ForwardGearRatios[gearNum].MinimumSpeed;
+			else
+				return ReverseGearRatios[gearNum].MinimumSpeed;
+		}
+		else
+		{
+			if (forwardRatios)
+				return ForwardGearRatiosSingular[gearNum].MinimumSpeed;
+			else
+				return ReverseGearRatiosSingular[gearNum].MinimumSpeed;
+		}
+	}
+
 private:
+
 
 	void FillTransmissionSetup()
 	{
@@ -578,19 +662,35 @@ private:
 		else
 		{
 
-			TArray<float> forwardRatios;
-			GetSingularFloatArrayFromHighLowArray(this->ForwardGearRatios, forwardRatios);
-			for (float Ratio : forwardRatios)
+			
+			if (bUseHighLowRatios)
 			{
-				PTransmissionConfig.ForwardRatios.Add(Ratio);
-			}
+				TArray<float> forwardRatios;
+				GetSingularFloatArrayFromHighLowArray(this->ForwardGearRatios, forwardRatios);
+				for (float Ratio : forwardRatios)
+				{
+					PTransmissionConfig.ForwardRatios.Add(Ratio);
+				}
 
-			TArray<float> reverseRatios;
-			GetSingularFloatArrayFromHighLowArray(this->ForwardGearRatios, reverseRatios);
-			PTransmissionConfig.ReverseRatios.Reset();
-			for (float Ratio : reverseRatios)
+				TArray<float> reverseRatios;
+				GetSingularFloatArrayFromHighLowArray(this->ForwardGearRatios, reverseRatios);
+				PTransmissionConfig.ReverseRatios.Reset();
+				for (float Ratio : reverseRatios)
+				{
+					PTransmissionConfig.ReverseRatios.Add(Ratio);
+				}
+			}
+			else
 			{
-				PTransmissionConfig.ReverseRatios.Add(Ratio);
+				for (FSingularGearCombo gearInfo : ForwardGearRatiosSingular)
+				{
+					PTransmissionConfig.ForwardRatios.Add(gearInfo.Ratio);
+				}
+				PTransmissionConfig.ReverseRatios.Reset();
+				for (FSingularGearCombo gearInfo : ReverseGearRatiosSingular)
+				{
+					PTransmissionConfig.ReverseRatios.Add(gearInfo.Ratio);
+				}
 			}
 		}
 	}
@@ -1056,57 +1156,71 @@ public:
 	//CUSTOMIZED FUNCTIONALITY FUNCTIONS START HERE
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Differential System", BlueprintPure)
+	//Returns the current in use Differenital System.
 	bool IsUsingSystem1ForDifferential() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Differential System", BlueprintPure)
+	//Returns wether differential system can be changed.
 	bool CanChangeDifferentialSystem();	
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System", BlueprintPure)
+	//Returns Current Gear. Should be used instead of GetCurrentGear function.
 	int GetCurrentActiveGear() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System", BlueprintPure)
+	//Returns Current Gear's ratio. Takes into account high/low gear switch. Returns with final ratio multiplied
 	float GetCurrentActiveGearRatio() const;
 
-	//Final Gear ratio is multiplied with each individual gear's ratio. This eliminates that effect and returns true gear ratio.
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System", BlueprintPure)
+	//Final Gear ratio is multiplied with each individual gear's ratio. This eliminates that effect and returns true gear ratio.
 	float GetCurrentActiveGearRatioWithoutFinalGearRatioAffect() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System", BlueprintPure)
+	//Returns wether high ratios are in use or low
 	bool IsUsingHighGears() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement", BlueprintPure)
+	//Returns speed in Kilometers Per hour
 	float GetVehicleSpeedInKM_PerHour() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement", BlueprintPure)
+	//Returns current Engine State.
 	EEngineState GetEngineStatus() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Physics", BlueprintPure)
+	//Returns vehicle center of mass. Center of mass affects handling a lot. Use this to debug.
 	FTransform GetCenterOfMass();
 
-	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Differential System") //True to activate system 1, false for system 2. Truck needs to be in neutral and rest. Will return true if system changed
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Differential System") 
+	//Set New Active Differential System. True to activate system 1, false for system 2. Truck needs to be in neutral and rest. Will return true if system changed. You can use failure reason for deubg.
 	bool SetActiveSystemForDifferential(bool UseSystem1, FString& failureReason);
 
-	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System") //True for using High Gear. False for Low Gear. Guaranteed Success
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System") 
+	//Change between using High Gear Ratios or Low Gear Ratios. True for using High Gear. False for Low Gear. Guaranteed Success if enabled
 	void ChangeTransmissionSystem(bool useHighGears);
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System")
-	/** Set the user input for gear automatically accounting for high, low gear. It is suggested to use the wrappers GearUp, GearDown, GoNeutral instead of this one  (-1 reverse, 0 neutral, 1+ forward)*/
+	/** Set the user input for gear accounting for high, low gear. It is suggested to use the wrappers GearUp, GearDown, GoNeutral instead of this one  (-1 reverse, 0 neutral, 1+ forward)*/
 	bool SetNewGear(int GearNum, bool changeImmediately=true);
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System")
+	//Shift to next gear if available
 	void GearUp();
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System")
+	//Shift to previous gear if available. 
 	void GearDown();
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System")
+	//Shift to neutral directly.
 	void GoNeutral();
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System")
+	//Shift to reverse gear directly
 	void PutInReverse();
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement")
-	//Use this in Both Forward Movement and Reverse Movement since Gas Pedal works for both
+	//Applies Throttle Input. Use this in Both Forward Movement and Reverse Movement since Gas Pedal works for both
 	bool ApplyGas(float gasPedalValue); 
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement")
@@ -1114,19 +1228,29 @@ public:
 	bool ApplyBrakes(float breakPedalValue);
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement")
+	//Applies Steering input.
 	bool SteerVehicle(float steeringWheelValue);
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement")
+	//Applies Clutch input. Useless for automatic vehicle
 	bool ApplyClutch(float clutchPedalValue);
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement")
+	//Applies handbreak instantly or disables it.
 	bool ChangeHandBrakeState(bool handBreakActive);
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement")
+	//Turns engine on/off. Equivalent to Ignition.
 	bool SetEngineStarterValue(bool starterValue);
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement")
+	//Updates Engine State based on variable values. This is the main brain of the manual vehicle.
+	//Called Internally wherever needed. Only call it if you think an action should update engine state, but is missing it somehow.
 	void UpdateVehicleEngineState();
+
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement")
+	//Toggles Break Assist. Used in heavy vehicles
+	bool ToggleBreakAssist(bool enableBreakAssist);
 
 #if WITH_EDITOR
 	virtual bool CanEditChange(const FProperty* InProperty) const override;
@@ -1230,6 +1354,15 @@ private:
 	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement", meta = (DisplayName = "Vehicle has automatic transmission?", AllowPrivateAccess = "true", DisplayAfter = "bMechanicalSimEnabled"))
 	//True = Automatic Car. False = Manual Car
 	bool isVehicleAutomatic = false;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Break Assist?", AllowPrivateAccess = "true"))
+	//Does Vehicle have break assist capabilities?
+	bool vehicleHasBreakAssist = true;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Changeable Differential Systems?", AllowPrivateAccess = "true"))
+	//Does Vehicle have capability to change between the 2 differentials?
+	bool vehicleHasMultipleDifferentials = true;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Changeable Gear Ratios?", AllowPrivateAccess = "true", EditCondition = "!isVehicleAutomatic"))
+	//Does Vehicle have high and low gear ratios for each gear? 
+	bool vehicleHasHighLowGears = true;
 	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Defaults", meta = (DisplayName = "Edit Default Input Ranges", AllowPrivateAccess = "true"))
 	//Allows to edit default input ranges.
 	bool editDefaultRanges = false;
