@@ -17,6 +17,56 @@ PRAGMA_DISABLE_OPTIMIZATION
 #endif
 
 USTRUCT(BlueprintType)
+struct DYNAMICVEHICLEMOVEMENT_API FDynamicSimulationData
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	bool isFilled;
+
+	UPROPERTY()
+	float netFuelIntakeValue;
+
+	UPROPERTY()
+	float netFuelIntakeMinRange;
+
+	UPROPERTY()
+	float netFuelIntakeMaxRange;
+
+	UPROPERTY()
+	float engineIdleRPM;
+
+	UPROPERTY()
+	float engineMaxRPM;
+
+	void SetIntakeValue(float intake)
+	{
+		isFilled = 0;
+		netFuelIntakeValue = FMath::Clamp(intake, netFuelIntakeMinRange, netFuelIntakeMaxRange);
+	}
+
+	FDynamicSimulationData()
+	{
+		isFilled = false;
+		netFuelIntakeValue = 0;
+	}
+
+	FDynamicSimulationData(float intake, float minRangeIntake, float maxRangeIntake, float idleRPM, float maxRPM, bool settingRangesOnly = false)
+	{
+		if(!settingRangesOnly)
+			isFilled = true;
+		else
+			isFilled = false;
+
+		netFuelIntakeValue = intake;
+		netFuelIntakeMinRange = minRangeIntake;
+		netFuelIntakeMaxRange = maxRangeIntake;
+		engineIdleRPM = idleRPM;
+		engineMaxRPM = maxRPM;
+	}
+};
+
+USTRUCT(BlueprintType)
 struct DYNAMICVEHICLEMOVEMENT_API FDynamicWheelSetup
 {
 	GENERATED_BODY()
@@ -106,8 +156,6 @@ enum class EEngineState: uint8
 	//Vehicle is running but clutch is pressed fully, disengaging the engine
 	EngineDisengaged
 };
-
-
 
 /**
  * Structure containing information about the status of a single wheel of the vehicle.
@@ -458,7 +506,6 @@ struct DYNAMICVEHICLEMOVEMENT_API FSingularGearCombo
 
 };
 
-
 USTRUCT()
 struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleTransmissionConfig
 {
@@ -720,7 +767,6 @@ enum class EDynamicSteeringType : uint8
 	Ackermann,
 };
 
-
 USTRUCT()
 struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleSteeringConfig
 {
@@ -792,8 +838,6 @@ private:
 
 };
 
-
-
 /** Commonly used Wheel state - evaluated once used wherever required for that frame */
 struct DYNAMICVEHICLEMOVEMENT_API FDynamicWheelState
 {
@@ -841,6 +885,8 @@ public:
 		UChaosVehicleSimulation::Init(PVehicleIn);
 
 		WheelState.Init(PVehicle->Wheels.Num());
+
+		dataImpactingSimulation = FDynamicSimulationData();
 	}
 
 	virtual void UpdateConstraintHandles(TArray<FPhysicsConstraintHandle>& ConstraintHandlesIn) override;
@@ -887,6 +933,8 @@ public:
 	FDynamicWheelState WheelState;	/** Cached state that holds wheel data for this frame */
 
 	TArray<FPhysicsConstraintHandle> ConstraintHandles;
+
+	FDynamicSimulationData dataImpactingSimulation;
 
 	// cache trace overlap query
 	TArray<FOverlapResult> OverlapResults;
@@ -1187,9 +1235,14 @@ public:
 	//Returns current Engine State.
 	EEngineState GetEngineStatus() const;
 
-	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Physics", BlueprintPure)
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Miscellanous", BlueprintPure)
 	//Returns vehicle center of mass. Center of mass affects handling a lot. Use this to debug.
 	FTransform GetCenterOfMass();
+
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Miscellanous", BlueprintPure)
+	//Returns net fuel intake taking into account manual fuel handle and gas input. Base implementation only returns greater value of the two.
+	//If input != -1, then input will be used to evaluate instead of gas input
+	virtual float GetNetFuelIntake(float inputGasValue = -1.0f);
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Differential System") 
 	//Set New Active Differential System. True to activate system 1, false for system 2. Truck needs to be in neutral and rest. Will return true if system changed. You can use failure reason for deubg.
@@ -1251,6 +1304,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement")
 	//Toggles Break Assist. Used in heavy vehicles
 	bool ToggleBreakAssist(bool enableBreakAssist);
+
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement")
+	//Use for Manual Fuel Handle Input. Call only when value changes
+	bool AdjustFuelHandle(float fuelValue);
 
 #if WITH_EDITOR
 	virtual bool CanEditChange(const FProperty* InProperty) const override;
@@ -1347,7 +1404,7 @@ private:
 	//Break assist value is true for active break assist and false for inactive break assist
 	bool currentBreakAssistValue = false; 
 	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Movement", meta = (DisplayName = "Fuel Handle Current Value", AllowPrivateAccess = "true"))
-	//Fuel handle value ranges between 0 and 100
+	//Fuel handle value ranges between 0 and 100 and determines fuel intake into engine.
 	float currentFuelHandleValue = 100; 
 
 
@@ -1363,6 +1420,9 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Changeable Gear Ratios?", AllowPrivateAccess = "true", EditCondition = "!isVehicleAutomatic"))
 	//Does Vehicle have high and low gear ratios for each gear? 
 	bool vehicleHasHighLowGears = true;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Manual Fuel Handle?", AllowPrivateAccess = "true", EditCondition = "!isVehicleAutomatic"))
+	//Does Vehicle have high and low gear ratios for each gear? 
+	bool vehicleHasManualFuelHandle = true;
 	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Defaults", meta = (DisplayName = "Edit Default Input Ranges", AllowPrivateAccess = "true"))
 	//Allows to edit default input ranges.
 	bool editDefaultRanges = false;
@@ -1396,11 +1456,15 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Defaults|Transmission System", meta = (DisplayName = "Clutch Input Maximum Value", AllowPrivateAccess = "true", EditCondition="editDefaultRanges&&isVehicleAutomatic==false"))
 	//Maximum possible value for clutch pedal input.  
 	float clutchPedalMaxValue = 100;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Defaults|Movement", meta = (DisplayName = "Minimum value of Fuel Intake to sustain Idle RPM", AllowPrivateAccess = "true", EditCondition = "editDefaultRanges&&isVehicleAutomatic==false&&vehicleHasManualFuelHandle"))
+	//The threshold value at which engine can sustain idle RPM. Includes Net Intake from Gas Pedal and Manual Handle. 
+	//See GetNetFuelIntake() for more info
+	float fuelValueToSustainIdleRPM = 30;
 
-	float previousEngineRPM = 500; //caches last engine RPM values.
+	float previousEngineRPM; //caches last engine RPM values.
 	float previousVehicleSpeed = 0; //caches last vehicle speed
 
-
+	UDynamicVehicleSimulation* derivedPtrForSimulationClass = nullptr;
 
 	/** Get distances between wheels - primarily a debug display helper */
 	FVector2D CalculateWheelLayoutDimensions();
