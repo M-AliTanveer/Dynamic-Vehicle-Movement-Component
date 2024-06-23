@@ -15,57 +15,6 @@
 #if VEHICLE_DEBUGGING_ENABLED
 PRAGMA_DISABLE_OPTIMIZATION
 #endif
-
-USTRUCT(BlueprintType)
-struct DYNAMICVEHICLEMOVEMENT_API FDynamicSimulationData
-{
-	GENERATED_BODY()
-
-	UPROPERTY()
-	bool isFilled;
-
-	UPROPERTY()
-	float netFuelIntakeValue;
-
-	UPROPERTY()
-	float netFuelIntakeMinRange;
-
-	UPROPERTY()
-	float netFuelIntakeMaxRange;
-
-	UPROPERTY()
-	float engineIdleRPM;
-
-	UPROPERTY()
-	float engineMaxRPM;
-
-	void SetIntakeValue(float intake)
-	{
-		isFilled = 0;
-		netFuelIntakeValue = FMath::Clamp(intake, netFuelIntakeMinRange, netFuelIntakeMaxRange);
-	}
-
-	FDynamicSimulationData()
-	{
-		isFilled = false;
-		netFuelIntakeValue = 0;
-	}
-
-	FDynamicSimulationData(float intake, float minRangeIntake, float maxRangeIntake, float idleRPM, float maxRPM, bool settingRangesOnly = false)
-	{
-		if(!settingRangesOnly)
-			isFilled = true;
-		else
-			isFilled = false;
-
-		netFuelIntakeValue = intake;
-		netFuelIntakeMinRange = minRangeIntake;
-		netFuelIntakeMaxRange = maxRangeIntake;
-		engineIdleRPM = idleRPM;
-		engineMaxRPM = maxRPM;
-	}
-};
-
 USTRUCT(BlueprintType)
 struct DYNAMICVEHICLEMOVEMENT_API FDynamicWheelSetup
 {
@@ -473,6 +422,9 @@ struct DYNAMICVEHICLEMOVEMENT_API FHighLowGearCombo
 	//Minimum speed is used to calculate engine stall condition when niether throttle nor clutch is pressed appropriately.
 	UPROPERTY(EditAnywhere, AdvancedDisplay, Category = Setup)
 	float MinimumSpeed = 0; 
+	//Max Speed gear can reach
+	UPROPERTY(EditAnywhere, AdvancedDisplay, Category = Setup)
+	float MaximumSpeed = 0;
 
 };
 
@@ -865,6 +817,67 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicWheelState
 	TArray<FHitResult> TraceResult;
 };
 
+USTRUCT(BlueprintType)
+struct DYNAMICVEHICLEMOVEMENT_API FDynamicSimulationData
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	bool isFilled = false;
+
+	UPROPERTY()
+	bool isThrottleActive = false;
+
+	UPROPERTY()
+	float netFuelIntakeValue = 0;
+
+	UPROPERTY()
+	float netFuelIntakeMinRange = 0;
+
+	UPROPERTY()
+	float netFuelIntakeMaxRange = 100;
+
+	UPROPERTY()
+	FDynamicVehicleEngineConfig engineData;
+
+	UPROPERTY()
+	FDynamicVehicleTransmissionConfig transmissionData;
+
+	UPROPERTY()
+	float vehicleCurrentSpeed = 0;
+
+	void FillData(float intake, float currentSpeed = 0, bool isThrottle = false)
+	{
+		isFilled = true;
+		isThrottleActive = isThrottle;
+		netFuelIntakeValue = FMath::Clamp(intake, netFuelIntakeMinRange, netFuelIntakeMaxRange);
+		vehicleCurrentSpeed = currentSpeed;
+	}
+
+	FDynamicSimulationData()
+	{
+		isFilled = false;
+		netFuelIntakeValue = 0;
+	}
+
+	FDynamicSimulationData(float intake, float minRangeIntake, float maxRangeIntake, FDynamicVehicleTransmissionConfig transmissionConfig, FDynamicVehicleEngineConfig engineConfig, bool settingRangesOnly = false)
+	{
+		if (!settingRangesOnly)
+			isFilled = true;
+		else
+			isFilled = false;
+
+		netFuelIntakeValue = intake;
+		netFuelIntakeMinRange = minRangeIntake;
+		netFuelIntakeMaxRange = maxRangeIntake;
+		engineData = engineConfig;
+		transmissionData = transmissionConfig;
+
+	}
+
+};
+
+
 //////////////////////////////////////////////////////////////////////////
 
 class DYNAMICVEHICLEMOVEMENT_API UDynamicVehicleSimulation : public UChaosVehicleSimulation
@@ -926,7 +939,6 @@ public:
 	bool IsWheelSpinning() const;
 	bool ContainsTraces(const FBox& Box, const TArray<struct Chaos::FSuspensionTrace>& SuspensionTrace);
 
-
 	/** Draw 3D debug lines and things along side the 3D model */
 	virtual void DrawDebug3D() override;
 
@@ -940,6 +952,9 @@ public:
 	TArray<FOverlapResult> OverlapResults;
 	bool bOverlapHit;
 	FBox QueryBox;
+
+private:
+	float targetRPM_BasedOnFuel = 0;
 };
 
 
@@ -1405,7 +1420,7 @@ private:
 	bool currentBreakAssistValue = false; 
 	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Movement", meta = (DisplayName = "Fuel Handle Current Value", AllowPrivateAccess = "true"))
 	//Fuel handle value ranges between 0 and 100 and determines fuel intake into engine.
-	float currentFuelHandleValue = 100; 
+	float currentFuelHandleValue = 0; 
 
 
 	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement", meta = (DisplayName = "Vehicle has automatic transmission?", AllowPrivateAccess = "true", DisplayAfter = "bMechanicalSimEnabled"))

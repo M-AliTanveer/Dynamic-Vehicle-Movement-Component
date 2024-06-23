@@ -783,7 +783,19 @@ void UDynamicVehicleSimulation::ApplyInput(const FControlInputs& ControlInputs, 
 		}
 		else
 		{
-			PEngine.SetThrottle(ModifiedInputs.ThrottleInput * ModifiedInputs.ThrottleInput);
+			if (dataImpactingSimulation.isFilled)
+			{
+				if (ModifiedInputs.ThrottleInput == 0 && targetRPM_BasedOnFuel != dataImpactingSimulation.engineData.EngineIdleRPM)
+				{
+					PEngine.SetThrottle(1);
+					ModifiedInputs.ThrottleInput = 1;
+				}
+				else
+					PEngine.SetThrottle(ModifiedInputs.ThrottleInput * ModifiedInputs.ThrottleInput);
+
+			}
+			else
+				PEngine.SetThrottle(ModifiedInputs.ThrottleInput * ModifiedInputs.ThrottleInput);
 		}
 
 		EngineBraking = PEngine.GetEngineRPM() * PEngine.Setup().EngineBrakeEffect;
@@ -801,8 +813,19 @@ void UDynamicVehicleSimulation::ApplyInput(const FControlInputs& ControlInputs, 
 
 		if (PWheel.BrakeEnabled)
 		{
+			if (ModifiedInputs.ThrottleInput > SMALL_NUMBER)
+			{
+				EngineBraking = 0;
+				EngineBrakingForce = 0.0f;
+			}
+
 			float BrakeForce = PWheel.MaxBrakeTorque * ModifiedInputs.BrakeInput;
 			PWheel.SetBrakeTorque(TorqueMToCm(BrakeForce + EngineBrakingForce), FMath::Abs(EngineBrakingForce) > FMath::Abs(BrakeForce));
+		}
+		else if (ModifiedInputs.ThrottleInput > SMALL_NUMBER)
+		{
+			EngineBraking = 0;
+			EngineBrakingForce = 0.0f;
 		}
 		else
 		{
@@ -856,17 +879,40 @@ void UDynamicVehicleSimulation::ProcessMechanicalSimulation(float DeltaTime)
 		}
 
 		float WheelSpeedRPM = FMath::Abs(PTransmission.GetEngineRPMFromWheelRPM(WheelRPM));
-
+		float targetRPM, maxAllowableRPM;
 		//Adjust RPM based on wheel RPM and fuel intake
 		if (dataImpactingSimulation.isFilled)
 		{
-			float engineMaxRPM = dataImpactingSimulation.engineMaxRPM;
-			float maxAllowableRPM = (dataImpactingSimulation.netFuelIntakeValue / 100.0f) * engineMaxRPM;
-			float targetRPM = PTransmission.GetEngineRPMFromWheelRPM(WheelRPM);
-			targetRPM = FMath::Min(targetRPM, maxAllowableRPM);
-			targetRPM = FMath::Max(targetRPM, dataImpactingSimulation.engineIdleRPM);
+			float engineMaxRPM = dataImpactingSimulation.engineData.MaxRPM;
+			maxAllowableRPM = (dataImpactingSimulation.netFuelIntakeValue / 100.0f) * engineMaxRPM;
+			targetRPM_BasedOnFuel = maxAllowableRPM;
+			targetRPM = PTransmission.GetEngineRPMFromWheelRPM(WheelRPM);
+			//targetRPM = FMath::Min(targetRPM, maxAllowableRPM);
+
+			if (maxAllowableRPM == dataImpactingSimulation.engineData.MaxRPM)
+				maxAllowableRPM = maxAllowableRPM - 1;
+		
+			float maxRPMChangeRate = 200.0f;
+			float currentRPM = PEngine.GetEngineRPM();
+			float rpmDifference = targetRPM - currentRPM;
+			if (FMath::Abs(rpmDifference) > maxRPMChangeRate)
+			{
+				targetRPM = currentRPM + FMath::Sign(rpmDifference) * maxRPMChangeRate;
+			}
+
+			if (targetRPM > maxAllowableRPM)
+			{
+				targetRPM = maxAllowableRPM;
+			}
+			if (targetRPM < dataImpactingSimulation.engineData.EngineIdleRPM)
+			{
+				targetRPM = dataImpactingSimulation.engineData.EngineIdleRPM;
+			}
+
 
 			PEngine.SetEngineRPM(PTransmission.IsOutOfGear(), targetRPM);
+			
+			
 		}
 		else
 		{
@@ -879,20 +925,89 @@ void UDynamicVehicleSimulation::ProcessMechanicalSimulation(float DeltaTime)
 		float GearRatio = PTransmission.GetGearRatio(PTransmission.GetCurrentGear());
 
 		PTransmission.Simulate(DeltaTime);
+		
+		float TransmissionTorque;
+		if (dataImpactingSimulation.isFilled)
+		{
+			if (PTransmission.GetCurrentGear() != 0 && PEngine.GetEngineTorque() == 0)
+			{
+				TransmissionTorque = PTransmission.GetTransmissionTorque(PEngine.GetTorqueFromRPM());
+			}
+			else
+			{
+				TransmissionTorque = PTransmission.GetTransmissionTorque(PEngine.GetEngineTorque());
 
-		float TransmissionTorque = PTransmission.GetTransmissionTorque(PEngine.GetEngineTorque());
+			}
+		}
+		else
+			TransmissionTorque = PTransmission.GetTransmissionTorque(PEngine.GetEngineTorque());
+
+
 		if (WheelSpeedRPM > PEngine.Setup().MaxRPM)
 		{
 			TransmissionTorque = 0.f;
 		}
-
 		// apply drive torque to wheels
 		for (int WheelIdx = 0; WheelIdx < PVehicle->Wheels.Num(); WheelIdx++)
 		{
 			auto& PWheel = PVehicle->Wheels[WheelIdx];
 			if (PWheel.Setup().EngineEnabled)
 			{
-				PWheel.SetDriveTorque(TorqueMToCm(TransmissionTorque) * PWheel.Setup().TorqueRatio);
+				if (dataImpactingSimulation.isFilled)
+				{
+					float allowedSpeed;
+					float clampValueRPM = targetRPM == maxAllowableRPM ? targetRPM : maxAllowableRPM;
+
+					if (PTransmission.GetCurrentGear() > 0)
+					{
+						float convertedGear = (PTransmission.GetCurrentGear() + 1) / 2 - 1;
+						allowedSpeed = UKismetMathLibrary::MapRangeClamped(clampValueRPM, dataImpactingSimulation.engineData.EngineIdleRPM, dataImpactingSimulation.engineData.MaxRPM,
+							0, dataImpactingSimulation.transmissionData.ForwardGearRatios[convertedGear].MaximumSpeed);
+						if (dataImpactingSimulation.vehicleCurrentSpeed > allowedSpeed)
+						{
+							PWheel.SetDriveTorque(0.f);
+						}
+						else
+						{
+							//UE_LOG(LogTemp, Log, TEXT("Setting drive torque : %s"), *FString::SanitizeFloat(TorqueMToCm(TransmissionTorque) * PWheel.Setup().TorqueRatio));
+
+							PWheel.SetDriveTorque(TorqueMToCm(TransmissionTorque) * PWheel.Setup().TorqueRatio);
+							//UE_LOG(LogTemp, Log, TEXT("drive torque : %s"), *FString::SanitizeFloat(PWheel.GetDriveTorque()));
+
+						}
+					}
+					else if (PTransmission.GetCurrentGear() == 0)
+					{
+						TransmissionTorque = 0.f;
+						allowedSpeed = 0;
+						PWheel.SetDriveTorque(0.f);
+
+					}
+					else
+					{
+						float convertedGear = (PTransmission.GetCurrentGear() - 1) / 2 + 1;
+						allowedSpeed = UKismetMathLibrary::MapRangeClamped(clampValueRPM, dataImpactingSimulation.engineData.EngineIdleRPM, dataImpactingSimulation.engineData.MaxRPM,
+							dataImpactingSimulation.transmissionData.ReverseGearRatios[convertedGear].MinimumSpeed, dataImpactingSimulation.transmissionData.ReverseGearRatios[convertedGear].MaximumSpeed);
+
+						if (dataImpactingSimulation.vehicleCurrentSpeed > allowedSpeed)
+						{
+							PWheel.SetDriveTorque(0.f);
+						}
+						else
+						{
+							PWheel.SetDriveTorque(TorqueMToCm(TransmissionTorque) * PWheel.Setup().TorqueRatio);
+						}
+
+
+					}
+					//UE_LOG(LogTemp, Log, TEXT("Current Speed: %s , Allowed Speed : %s"), *FString::SanitizeFloat(dataImpactingSimulation.vehicleCurrentSpeed),*FString::SanitizeFloat(allowedSpeed));
+
+				}
+				else
+				{
+					PWheel.SetDriveTorque(TorqueMToCm(TransmissionTorque)* PWheel.Setup().TorqueRatio);
+				}
+
 			}
 			else
 			{
@@ -1277,7 +1392,7 @@ void UDynamicVehicleMovementComponent::CreateVehicle()
 		if (derivedPtrForSimulationClass)
 		{
 			UE_LOG(LogTemp, Display, TEXT("Derived Ptr has been assigned a copy of the Dynamic Simulation Class for Data transfer"));
-			derivedPtrForSimulationClass->dataImpactingSimulation = FDynamicSimulationData(0, gasPedalMinValue, gasPedalMaxValue, EngineSetup.EngineIdleRPM, EngineSetup.MaxRPM, true);
+			derivedPtrForSimulationClass->dataImpactingSimulation = FDynamicSimulationData(0, gasPedalMinValue, gasPedalMaxValue, TransmissionSetup, EngineSetup , true);
 		}
 	}
 
@@ -3272,8 +3387,6 @@ bool UDynamicVehicleMovementComponent::ApplyGas(float gasPedalValue)
 			currentGasPedalValue = gasPedalValue;
 			return false;
 		}
-		derivedPtrForSimulationClass->dataImpactingSimulation.SetIntakeValue(GetNetFuelIntake(gasPedalValue));
-
 	}
 }
 
@@ -3364,6 +3477,8 @@ bool UDynamicVehicleMovementComponent::ApplyClutch(float clutchPedalValue)
 		}
 		else
 			currentClutchPedalValue = clutchPedalValue;
+
+
 		return true;
 	}
 }
@@ -3535,6 +3650,10 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 	if (currentEngineState == EEngineState::EngineOff || currentEngineState == EEngineState::EngineIdle)
 	{
 		SetThrottleInput(0);
+	}
+	if (vehicleHasManualFuelHandle && currentEngineState != EEngineState::EngineOff)
+	{
+		derivedPtrForSimulationClass->dataImpactingSimulation.FillData(GetNetFuelIntake(), GetVehicleSpeedInKM_PerHour(), currentGasPedalValue > gasPedalMinValue);
 	}
 }
 
@@ -3826,6 +3945,7 @@ bool UDynamicVehicleMovementComponent::AdjustFuelHandle(float fuelValue)
 			UpdateVehicleEngineState();
 		}
 		currentFuelHandleValue = fuelValue;
+
 		return true;
 	}
 	else
