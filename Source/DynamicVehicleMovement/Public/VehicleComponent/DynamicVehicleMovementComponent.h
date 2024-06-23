@@ -424,7 +424,7 @@ struct DYNAMICVEHICLEMOVEMENT_API FHighLowGearCombo
 	float MinimumSpeed = 0; 
 	//Max Speed gear can reach
 	UPROPERTY(EditAnywhere, AdvancedDisplay, Category = Setup)
-	float MaximumSpeed = 0;
+	float MaximumSpeed = -1;
 
 };
 
@@ -455,6 +455,8 @@ struct DYNAMICVEHICLEMOVEMENT_API FSingularGearCombo
 	//Minimum speed is used to calculate engine stall condition when niether throttle nor clutch is pressed appropriately.
 	UPROPERTY(EditAnywhere, AdvancedDisplay, Category = Setup)
 	float MinimumSpeed = 0;
+	UPROPERTY(EditAnywhere, AdvancedDisplay, Category = Setup)
+	float MaximumSpeed = -1;
 
 };
 
@@ -627,6 +629,26 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleTransmissionConfig
 				return ForwardGearRatiosSingular[gearNum].MinimumSpeed;
 			else
 				return ReverseGearRatiosSingular[gearNum].MinimumSpeed;
+		}
+	}
+
+	float GetMaximumSpeedForGear(int gearNum, bool forwardRatios) const
+	{
+		if (bUseAutomaticGears)
+			return 0.0f;
+		else if (bUseHighLowRatios)
+		{
+			if (forwardRatios)
+				return ForwardGearRatios[gearNum].MaximumSpeed;
+			else
+				return ReverseGearRatios[gearNum].MaximumSpeed;
+		}
+		else
+		{
+			if (forwardRatios)
+				return ForwardGearRatiosSingular[gearNum].MaximumSpeed;
+			else
+				return ReverseGearRatiosSingular[gearNum].MaximumSpeed;
 		}
 	}
 
@@ -829,6 +851,9 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicSimulationData
 	bool isThrottleActive = false;
 
 	UPROPERTY()
+	bool isBreakAssistActive = false;
+
+	UPROPERTY()
 	float netFuelIntakeValue = 0;
 
 	UPROPERTY()
@@ -846,12 +871,13 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicSimulationData
 	UPROPERTY()
 	float vehicleCurrentSpeed = 0;
 
-	void FillData(float intake, float currentSpeed = 0, bool isThrottle = false)
+	void FillData(float intake, float currentSpeed = 0, bool isThrottle = false, bool isBreakAssist = false)
 	{
 		isFilled = true;
 		isThrottleActive = isThrottle;
 		netFuelIntakeValue = FMath::Clamp(intake, netFuelIntakeMinRange, netFuelIntakeMaxRange);
 		vehicleCurrentSpeed = currentSpeed;
+		isBreakAssistActive = isBreakAssist;
 	}
 
 	FDynamicSimulationData()
