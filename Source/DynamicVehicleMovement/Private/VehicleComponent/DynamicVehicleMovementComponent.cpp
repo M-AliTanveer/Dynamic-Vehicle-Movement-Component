@@ -879,7 +879,7 @@ void UDynamicVehicleSimulation::ProcessMechanicalSimulation(float DeltaTime)
 		}
 
 		float WheelSpeedRPM = FMath::Abs(PTransmission.GetEngineRPMFromWheelRPM(WheelRPM));
-		float targetRPM, maxAllowableRPM;
+		float targetRPM = dataImpactingSimulation.engineData.EngineIdleRPM, maxAllowableRPM = dataImpactingSimulation.engineData.MaxRPM;
 		//Adjust RPM based on wheel RPM and fuel intake
 		if (dataImpactingSimulation.isFilled)
 		{
@@ -955,7 +955,7 @@ void UDynamicVehicleSimulation::ProcessMechanicalSimulation(float DeltaTime)
 			{
 				if (dataImpactingSimulation.isFilled)
 				{
-					float allowedSpeed;
+					float allowedSpeed = BIG_NUMBER;
 					float clampValueRPM = targetRPM == maxAllowableRPM ? targetRPM : maxAllowableRPM;
 
 					if (PTransmission.GetCurrentGear() > 0)
@@ -1401,7 +1401,7 @@ void UDynamicVehicleMovementComponent::CreateVehicle()
 		if (derivedPtrForSimulationClass)
 		{
 			UE_LOG(LogTemp, Display, TEXT("Derived Ptr has been assigned a copy of the Dynamic Simulation Class for Data transfer"));
-			derivedPtrForSimulationClass->dataImpactingSimulation = FDynamicSimulationData(0, gasPedalMinValue, gasPedalMaxValue, TransmissionSetup, EngineSetup , true);
+			derivedPtrForSimulationClass->dataImpactingSimulation = FDynamicSimulationData(0, gasPedalMinValue, gasPedalMaxValue, TransmissionSetup, EngineSetup ,vehicleFunctionalities, true);
 		}
 	}
 
@@ -3035,41 +3035,50 @@ void UDynamicVehicleMovementComponent::PostEditChangeProperty(struct FPropertyCh
 
 	RecalculateAxles();
 
-	if (isVehicleAutomatic != TransmissionSetup.bUseAutomaticGears)
+	vehicleFunctionalities.SetTransmissionNature(isVehicleAutomatic);
+
+	if (isVehicleAutomatic && PropertyName=="isVehicleAutomatic")		//Auto Vehicle 
 	{
-		TransmissionSetup.bUseAutomaticGears = isVehicleAutomatic;
-		if (!isVehicleAutomatic)
-		{
-			vehicleHasHighLowGears = true;
-			vehicleHasManualFuelHandle = true;
-		}
+		//Set functionality defaults
+		vehicleFunctionalities.vehicleHasHighLowGears = false;
+		vehicleFunctionalities.vehicleHasManualFuelHandle = false;
+		vehicleFunctionalities.vehicleHasTransferCase = false;
+		vehicleFunctionalities.vehicleHasMultipleDifferentials = false;
+		vehicleFunctionalities.vehicleHasBreakAssist = false;
+
+		//Set transmission setup values
+		TransmissionSetup.bUseHighLowRatios = false;
+		TransmissionSetup.bUseAutomaticGears = true;
 	}
-	if (!isVehicleAutomatic)
+	else if (!isVehicleAutomatic && PropertyName == "isVehicleAutomatic")	//Manual Vehicle
 	{
+		vehicleFunctionalities.vehicleHasHighLowGears = true;
+		TransmissionSetup.bUseHighLowRatios = true;
+		TransmissionSetup.bUseAutomaticGears = false;
+
+		vehicleFunctionalities.vehicleHasBreakAssist = true;
+		vehicleFunctionalities.vehicleHasManualFuelHandle = true;
+		vehicleFunctionalities.vehicleHasTransferCase = true;
+		vehicleFunctionalities.vehicleHasMultipleDifferentials = true;
+
 		bReverseAsBrake = false;
 		bThrottleAsBrake = false;
-
-		if (vehicleHasHighLowGears)
-			TransmissionSetup.bUseHighLowRatios = true;
-		else
-			TransmissionSetup.bUseHighLowRatios = false;
-
 	}
-	else if (isVehicleAutomatic)
-	{
-		vehicleHasHighLowGears = false;
-		vehicleHasManualFuelHandle = false;
+
+	if(vehicleFunctionalities.vehicleHasManualFuelHandle && PropertyName == "vehicleHasManualFuelHandle")
+		fuelValueToSustainIdleRPM = 30;
+	else if(PropertyName == "vehicleHasManualFuelHandle")
+		fuelValueToSustainIdleRPM = gasPedalMinValue;
+
+	if (vehicleFunctionalities.vehicleHasHighLowGears && PropertyName == "vehicleHasHighLowGears")
+		TransmissionSetup.bUseHighLowRatios = true;
+	else if (PropertyName == "vehicleHasHighLowGears")
 		TransmissionSetup.bUseHighLowRatios = false;
 
-	}
-	if (!vehicleHasManualFuelHandle)
-	{
-		fuelValueToSustainIdleRPM = gasPedalMinValue;
-	}
-	else
-	{
-		fuelValueToSustainIdleRPM = 30;
-	}
+	if (vehicleFunctionalities.vehicleHasTransferCase && PropertyName == "vehicleHasTransferCase")
+		transferCaseConfig.isTransferCaseActive = true;
+	else if (PropertyName == "vehicleHasTransferCase")
+		transferCaseConfig.isTransferCaseActive = false;
 
 
 	if (editDefaultRanges)
@@ -3115,7 +3124,6 @@ void UDynamicVehicleMovementComponent::PostEditChangeProperty(struct FPropertyCh
 		}
 	}
 	
-
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
 }
@@ -3130,6 +3138,14 @@ bool UDynamicVehicleMovementComponent::CanEditChange(const FProperty* InProperty
 	if (InProperty->GetFName() == GET_MEMBER_NAME_CHECKED(UDynamicVehicleMovementComponent, bThrottleAsBrake))
 	{
 		return ParentVal && isVehicleAutomatic;
+	}
+	if (InProperty->GetFName() == GET_MEMBER_NAME_CHECKED(UDynamicVehicleMovementComponent, fuelValueToSustainIdleRPM))
+	{
+		return ParentVal && vehicleFunctionalities.vehicleHasManualFuelHandle && !isVehicleAutomatic;
+	}
+	if (InProperty->GetFName() == GET_MEMBER_NAME_CHECKED(UDynamicVehicleMovementComponent, transferCaseConfig))
+	{
+		return ParentVal && vehicleFunctionalities.vehicleHasTransferCase && !isVehicleAutomatic;
 	}
 	return ParentVal;
 }
@@ -3156,8 +3172,10 @@ UDynamicVehicleMovementComponent::UDynamicVehicleMovementComponent(const FObject
 	WheelTraceCollisionResponses = FCollisionResponseContainer::GetDefaultResponseContainer();
 	WheelTraceCollisionResponses.Vehicle = ECR_Ignore;
 
-	fuelValueToSustainIdleRPM = 30;
+	vehicleFunctionalities.SetTransmissionNature(isVehicleAutomatic);
+	TransmissionSetup.SetTransferCaseModifier(transferCaseConfig.GetTransferCaseRatio());
 
+	currentTransferCaseRatio = transferCaseConfig.GetTransferCaseRatio();
 
 #if WITH_EDITOR
 	UFunction* setGearFunc = StaticClass()->FindFunctionByName(FName("SetTargetGear"));
@@ -3186,7 +3204,7 @@ bool UDynamicVehicleMovementComponent::IsUsingSystem1ForDifferential() const
 
 bool UDynamicVehicleMovementComponent::SetActiveSystemForDifferential(bool UseSystem1, FString& failureReason)
 {
-	if (vehicleHasMultipleDifferentials)
+	if (vehicleFunctionalities.vehicleHasMultipleDifferentials)
 	{
 		if (CanChangeDifferentialSystem())
 		{
@@ -3222,13 +3240,94 @@ bool UDynamicVehicleMovementComponent::SetActiveSystemForDifferential(bool UseSy
 	}
 }
 
+bool UDynamicVehicleMovementComponent::SetTransferCasePosition(ETransferCasePosition newPosition, FString& failureReason)
+{
+	if (vehicleFunctionalities.vehicleHasTransferCase)
+	{
+		transferCaseConfig.isTransferCaseActive = true;
+		if (CanChangeTransferCasePosition())
+		{
+
+			if (newPosition == transferCaseConfig.transferCasePosition)
+			{
+				failureReason = "Changing to same transfer case position";
+			}
+			else if (newPosition == ETransferCasePosition::HighRatio)
+			{
+				transferCaseConfig.transferCasePosition = ETransferCasePosition::HighRatio;
+				currentTransferCaseRatio = transferCaseConfig.GetTransferCaseRatio();
+				TransmissionSetup.SetTransferCaseModifier(currentTransferCaseRatio);
+			}
+			else if (newPosition == ETransferCasePosition::LowRatio)
+			{
+				transferCaseConfig.transferCasePosition = ETransferCasePosition::LowRatio;
+				currentTransferCaseRatio = transferCaseConfig.GetTransferCaseRatio();
+				TransmissionSetup.SetTransferCaseModifier(currentTransferCaseRatio);
+			}
+			else if (newPosition == ETransferCasePosition::Neutral)
+			{
+				transferCaseConfig.transferCasePosition = ETransferCasePosition::Neutral;
+				currentTransferCaseRatio = transferCaseConfig.GetTransferCaseRatio();
+				TransmissionSetup.SetTransferCaseModifier(currentTransferCaseRatio);
+			}
+
+			CreateVehicle();
+			FixupSkeletalMesh();
+			return true;
+		}
+		else
+		{
+			failureReason = "Not in rest position";
+			return false;
+		}
+	}
+	else
+	{
+		transferCaseConfig.isTransferCaseActive = false;
+		failureReason = "Vehicle does not have Transfer Case System";
+		return false;
+	}
+}
+
+bool UDynamicVehicleMovementComponent::SetTransferCasePositionUsingNum(int newPosition, FString& failureReason)
+{
+	ETransferCasePosition tempPosition;
+	if (newPosition == -1)
+		tempPosition = ETransferCasePosition::LowRatio;
+	else if (newPosition == 0)
+		tempPosition = ETransferCasePosition::Neutral;
+	else if (newPosition == 1)
+		tempPosition = ETransferCasePosition::HighRatio;
+	else
+	{
+		failureReason = "Incorrect Numeral Identifier. Only -1, 0, 1 are possible!";
+		return false;
+	}
+
+	return SetTransferCasePosition(tempPosition, failureReason);
+}
+
 bool UDynamicVehicleMovementComponent::CanChangeDifferentialSystem()
 {
-	if (vehicleHasMultipleDifferentials)
+	if (vehicleFunctionalities.vehicleHasMultipleDifferentials)
 	{
 		float currentSpeed = GetForwardSpeedMPH();
 		int currentGear = GetCurrentActiveGear();
 		if (currentGear == 0 && (currentSpeed<1 && currentSpeed>-1))
+			return true;
+		else
+			return false;
+	}
+	else
+		return false;
+}
+
+bool UDynamicVehicleMovementComponent::CanChangeTransferCasePosition()
+{
+	if (vehicleFunctionalities.vehicleHasTransferCase)
+	{
+		float currentSpeed = GetForwardSpeedMPH();
+		if (currentSpeed<1 && currentSpeed>-1)
 			return true;
 		else
 			return false;
@@ -3298,12 +3397,12 @@ float UDynamicVehicleMovementComponent::GetCurrentActiveGearRatioWithoutFinalGea
 
 bool UDynamicVehicleMovementComponent::IsUsingHighGears() const
 {
-	return usingHighGears&&vehicleHasHighLowGears;
+	return usingHighGears&& vehicleFunctionalities.vehicleHasHighLowGears;
 }
 
 void UDynamicVehicleMovementComponent::ChangeTransmissionSystem(bool useHighGears = true)
 {
-	if (vehicleHasHighLowGears)
+	if (vehicleFunctionalities.vehicleHasHighLowGears)
 	{
 		usingHighGears = useHighGears;
 		int currentGear = GetCurrentActiveGear();
@@ -3343,7 +3442,7 @@ float UDynamicVehicleMovementComponent::GetNetFuelIntake(float inputGasValue)
 			return 0;
 	}
 	//normal behaviour
-	if (vehicleHasManualFuelHandle)
+	if (vehicleFunctionalities.vehicleHasManualFuelHandle)
 	{
 		if (inputGasValue != -1.0f)
 		{
@@ -3484,7 +3583,7 @@ bool UDynamicVehicleMovementComponent::ApplyClutch(float clutchPedalValue)
 		{
 			float currentVehicleSpeed = GetVehicleSpeedInKM_PerHour();
 			float currentGear = GetCurrentActiveGearRatio();
-			float currentGearMinimumSpeed;
+			float currentGearMinimumSpeed = 0;
 			if (currentGear > 0)
 			{
 				currentGearMinimumSpeed = TransmissionSetup.GetMinimumSpeedForGear(currentGear - 1, true);
@@ -3537,7 +3636,7 @@ bool UDynamicVehicleMovementComponent::SetNewGear(int GearNum, bool changeImmedi
 				return true;
 			}
 
-			if (vehicleHasHighLowGears)
+			if (vehicleFunctionalities.vehicleHasHighLowGears)
 			{
 				if (GearNum > 0 && GearNum > TransmissionSetup.ForwardGearRatios.Num())
 				{
@@ -3680,7 +3779,7 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 	{
 		SetThrottleInput(0);
 	}
-	if (vehicleHasManualFuelHandle && currentEngineState != EEngineState::EngineOff)
+	if (vehicleFunctionalities.vehicleHasManualFuelHandle && currentEngineState != EEngineState::EngineOff)
 	{
 		derivedPtrForSimulationClass->dataImpactingSimulation.FillData(GetNetFuelIntake(), GetVehicleSpeedInKM_PerHour(), currentGasPedalValue > gasPedalMinValue, currentBreakAssistValue);
 	}
@@ -3958,7 +4057,7 @@ void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
 
 bool UDynamicVehicleMovementComponent::ToggleBreakAssist(bool enableBreakAssist)
 {
-	if (vehicleHasBreakAssist)
+	if (vehicleFunctionalities.vehicleHasBreakAssist)
 	{
 		if (currentEngineState == EEngineState::EngineOff)
 		{
@@ -3979,7 +4078,7 @@ bool UDynamicVehicleMovementComponent::ToggleBreakAssist(bool enableBreakAssist)
 
 bool UDynamicVehicleMovementComponent::AdjustFuelHandle(float fuelValue)
 {
-	if (vehicleHasManualFuelHandle)
+	if (vehicleFunctionalities.vehicleHasManualFuelHandle)
 	{
 		if (currentFuelHandleValue < fuelValueToSustainIdleRPM && fuelValue >= fuelValueToSustainIdleRPM)
 		{

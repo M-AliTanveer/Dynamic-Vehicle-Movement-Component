@@ -652,8 +652,13 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleTransmissionConfig
 		}
 	}
 
+	void SetTransferCaseModifier(float inRatio)
+	{
+		transferCaseModifer = inRatio;
+	}
 private:
 
+	float transferCaseModifer = 1;
 
 	void FillTransmissionSetup()
 	{
@@ -662,7 +667,7 @@ private:
 		PTransmissionConfig.ChangeUpRPM = this->ChangeUpRPM;
 		PTransmissionConfig.ChangeDownRPM = this->ChangeDownRPM;
 		PTransmissionConfig.GearChangeTime = this->GearChangeTime;
-		PTransmissionConfig.FinalDriveRatio = this->FinalRatio;
+		PTransmissionConfig.FinalDriveRatio = this->FinalRatio* transferCaseModifer;
 		PTransmissionConfig.ForwardRatios.Reset();
 		PTransmissionConfig.TransmissionEfficiency = this->TransmissionEfficiency;
 
@@ -741,6 +746,14 @@ enum class EDynamicSteeringType : uint8
 	Ackermann,
 };
 
+UENUM()
+enum class ETransferCasePosition : uint8
+{
+	LowRatio,	//Higher Torque, Lower Speed
+	Neutral,	//No Movement
+	HighRatio	//Higher Speed, Lower Torque
+};
+
 USTRUCT()
 struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleSteeringConfig
 {
@@ -812,6 +825,50 @@ private:
 
 };
 
+USTRUCT(BlueprintType)
+struct DYNAMICVEHICLEMOVEMENT_API FDyamicTransferCaseConfig 
+{
+	GENERATED_BODY()
+
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Transfer Case System", meta = (DisplayName = "Transfer Case Low Ratio", AllowPrivateAccess = "true"))
+	//Low Ratio for Transfer Case
+	float transferCaseLowRatio = 1.662;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Transfer Case System", meta = (DisplayName = "Transfer Case High Ratio", AllowPrivateAccess = "true"))
+	//High Ratio for Transfer Case 
+	float transferCaseHighRatio = 0.917;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Transfer Case System", meta = (DisplayName = "Transfer Case Starting Position", AllowPrivateAccess = "true"))
+	ETransferCasePosition transferCasePosition = ETransferCasePosition::HighRatio;
+
+	bool isTransferCaseActive = true;
+
+	float GetTransferCaseRatio()
+	{
+		float retValue = 0;
+		if (isTransferCaseActive)
+		{
+			switch (transferCasePosition)
+			{
+			case ETransferCasePosition::LowRatio:
+				retValue = transferCaseLowRatio;
+				break;
+			case ETransferCasePosition::Neutral:
+				retValue = 0;
+				break;
+			case ETransferCasePosition::HighRatio:
+				retValue = transferCaseHighRatio;
+				break;
+			}
+		}
+		else
+		{
+			retValue = 1;
+		}
+		return retValue;
+	}
+
+};
+
 /** Commonly used Wheel state - evaluated once used wherever required for that frame */
 struct DYNAMICVEHICLEMOVEMENT_API FDynamicWheelState
 {
@@ -837,6 +894,44 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicWheelState
 	TArray<FVector> LocalWheelVelocity; /** Local velocity of Wheel */
 	TArray<Chaos::FSuspensionTrace> Trace;
 	TArray<FHitResult> TraceResult;
+};
+
+USTRUCT(BlueprintType)
+struct DYNAMICVEHICLEMOVEMENT_API FDynamicFunctionalities
+{
+	GENERATED_BODY()
+
+	FDynamicFunctionalities()
+	{
+		vehicleHasBreakAssist = true;
+		vehicleHasMultipleDifferentials = true;
+		vehicleHasHighLowGears = true;
+		vehicleHasManualFuelHandle = true;
+	}
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Break Assist?", AllowPrivateAccess = "true"))
+	//Does Vehicle have break assist capabilities?
+	bool vehicleHasBreakAssist = true;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Changeable Differential Systems?", AllowPrivateAccess = "true"))
+	//Does Vehicle have capability to change between the 2 differentials?
+	bool vehicleHasMultipleDifferentials = true;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Changeable Gear Ratios?", AllowPrivateAccess = "true", EditCondition = "isVehicleAutomaticTransmission"))
+	//Does Vehicle have high and low gear ratios for each gear? 
+	bool vehicleHasHighLowGears = true;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Manual Fuel Handle?", AllowPrivateAccess = "true", EditCondition = "isVehicleAutomaticTransmission"))
+	//Does Vehicle have high and low gear ratios for each gear? 
+	bool vehicleHasManualFuelHandle = true;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Transfer Case?", AllowPrivateAccess = "true", EditCondition = "isVehicleAutomaticTransmission"))
+	//Does Vehicle have specific transfer case with differing ratios?
+	bool vehicleHasTransferCase = true;
+
+	void SetTransmissionNature(bool isAutomatic = true)
+	{
+		isVehicleAutomaticTransmission = !isAutomatic;
+	}
+private:
+	UPROPERTY()
+	bool isVehicleAutomaticTransmission = false;
 };
 
 USTRUCT(BlueprintType)
@@ -869,6 +964,10 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicSimulationData
 	FDynamicVehicleTransmissionConfig transmissionData;
 
 	UPROPERTY()
+	FDynamicFunctionalities vehicleFunctionalities;
+
+
+	UPROPERTY()
 	float vehicleCurrentSpeed = 0;
 
 	void FillData(float intake, float currentSpeed = 0, bool isThrottle = false, bool isBreakAssist = false)
@@ -886,7 +985,7 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicSimulationData
 		netFuelIntakeValue = 0;
 	}
 
-	FDynamicSimulationData(float intake, float minRangeIntake, float maxRangeIntake, FDynamicVehicleTransmissionConfig transmissionConfig, FDynamicVehicleEngineConfig engineConfig, bool settingRangesOnly = false)
+	FDynamicSimulationData(float intake, float minRangeIntake, float maxRangeIntake, FDynamicVehicleTransmissionConfig transmissionConfig, FDynamicVehicleEngineConfig engineConfig, FDynamicFunctionalities functionalityConfig, bool settingRangesOnly = false)
 	{
 		if (!settingRangesOnly)
 			isFilled = true;
@@ -898,6 +997,7 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicSimulationData
 		netFuelIntakeMaxRange = maxRangeIntake;
 		engineData = engineConfig;
 		transmissionData = transmissionConfig;
+		vehicleFunctionalities = functionalityConfig;
 
 	}
 
@@ -982,7 +1082,6 @@ public:
 private:
 	float targetRPM_BasedOnFuel = 0;
 };
-
 
 
 /**
@@ -1252,6 +1351,10 @@ public:
 	//Returns wether differential system can be changed.
 	bool CanChangeDifferentialSystem();	
 
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transfer Case System", BlueprintPure)
+	//Returns wether differential system can be changed.
+	bool CanChangeTransferCasePosition();
+
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System", BlueprintPure)
 	//Returns Current Gear. Should be used instead of GetCurrentGear function.
 	int GetCurrentActiveGear() const;
@@ -1288,6 +1391,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Differential System") 
 	//Set New Active Differential System. True to activate system 1, false for system 2. Truck needs to be in neutral and rest. Will return true if system changed. You can use failure reason for deubg.
 	bool SetActiveSystemForDifferential(bool UseSystem1, FString& failureReason);
+
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transfer Case System")
+	//Set New Ratio of Transfer Case if enabled.
+	bool SetTransferCasePosition(ETransferCasePosition newPosition, FString &failureReason);
+
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transfer Case System")
+	//Set New Ratio of Transfer Case if enabled.
+	bool SetTransferCasePositionUsingNum(int newPosition, FString& failureReason);
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System") 
 	//Change between using High Gear Ratios or Low Gear Ratios. True for using High Gear. False for Low Gear. Guaranteed Success if enabled
@@ -1411,7 +1522,7 @@ protected:
 	
 
 private:
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Differential System", meta = (DisplayName = "Is Using System 1 For Differential?", AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Differential Setup", meta = (DisplayName = "Is Using System 1 For Differential?", AllowPrivateAccess = "true"))
 	//True for System 1 in use, False for System 2. Default is System 2.
 	bool useSystem1ForDifferential = false; 
 	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Transmission System", meta = (DisplayName = "Is Using High Gear Ratios?", AllowPrivateAccess = "true"))
@@ -1447,23 +1558,19 @@ private:
 	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Movement", meta = (DisplayName = "Fuel Handle Current Value", AllowPrivateAccess = "true"))
 	//Fuel handle value ranges between 0 and 100 and determines fuel intake into engine.
 	float currentFuelHandleValue = 0; 
+	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Transfer Case System", meta = (DisplayName = "Current InUse Transfer Case Ratio", AllowPrivateAccess = "true"))
+	//Ratio being applied by the transfer case system.
+	float currentTransferCaseRatio = 1;
+
 
 
 	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement", meta = (DisplayName = "Vehicle has automatic transmission?", AllowPrivateAccess = "true", DisplayAfter = "bMechanicalSimEnabled"))
 	//True = Automatic Car. False = Manual Car
 	bool isVehicleAutomatic = false;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Break Assist?", AllowPrivateAccess = "true"))
-	//Does Vehicle have break assist capabilities?
-	bool vehicleHasBreakAssist = true;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Changeable Differential Systems?", AllowPrivateAccess = "true"))
-	//Does Vehicle have capability to change between the 2 differentials?
-	bool vehicleHasMultipleDifferentials = true;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Changeable Gear Ratios?", AllowPrivateAccess = "true", EditCondition = "!isVehicleAutomatic"))
-	//Does Vehicle have high and low gear ratios for each gear? 
-	bool vehicleHasHighLowGears = true;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Manual Fuel Handle?", AllowPrivateAccess = "true", EditCondition = "!isVehicleAutomatic"))
-	//Does Vehicle have high and low gear ratios for each gear? 
-	bool vehicleHasManualFuelHandle = true;
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement", meta = (DisplayName = "Vehicle Optional Functionalities", AllowPrivateAccess = "true", DisplayAfter = "bMechanicalSimEnabled"))
+	FDynamicFunctionalities vehicleFunctionalities;
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement", meta = (DisplayName = "Transfer Case System", AllowPrivateAccess = "true", DisplayAfter = "vehicleFunctionalities"))
+	FDyamicTransferCaseConfig transferCaseConfig;
 	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Defaults", meta = (DisplayName = "Edit Default Input Ranges", AllowPrivateAccess = "true"))
 	//Allows to edit default input ranges.
 	bool editDefaultRanges = false;
@@ -1497,7 +1604,7 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Defaults|Transmission System", meta = (DisplayName = "Clutch Input Maximum Value", AllowPrivateAccess = "true", EditCondition="editDefaultRanges&&isVehicleAutomatic==false"))
 	//Maximum possible value for clutch pedal input.  
 	float clutchPedalMaxValue = 100;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Defaults|Movement", meta = (DisplayName = "Minimum value of Fuel Intake to sustain Idle RPM", AllowPrivateAccess = "true", EditCondition = "editDefaultRanges&&isVehicleAutomatic==false&&vehicleHasManualFuelHandle"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Defaults|Movement", meta = (DisplayName = "Minimum value of Fuel Intake to sustain Idle RPM", AllowPrivateAccess = "true", EditCondition = "editDefaultRanges&&isVehicleAutomatic==false"))
 	//The threshold value at which engine can sustain idle RPM. Includes Net Intake from Gas Pedal and Manual Handle. 
 	//See GetNetFuelIntake() for more info
 	float fuelValueToSustainIdleRPM = 30;
