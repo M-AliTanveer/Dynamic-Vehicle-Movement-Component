@@ -1460,7 +1460,6 @@ void UDynamicVehicleMovementComponent::PrevDebugPage()
 	DebugPage = (EDynamicDebugPages)PageAsInt;*/
 }
 
-
 // Setup
 void UDynamicVehicleMovementComponent::ComputeConstants()
 {
@@ -1516,6 +1515,14 @@ void UDynamicVehicleMovementComponent::SetupVehicle(TUniquePtr<Chaos::FSimpleWhe
 	for (int32 WheelIdx = 0; WheelIdx < (useSystem1ForDifferential?(WheelSetupsForDifferentialSystem1):(WheelSetupsForDifferentialSystem2)).Num(); ++WheelIdx)
 	{
 		UDynamicWheel* Wheel = (useSystem1ForDifferential?(WheelSetupsForDifferentialSystem1):(WheelSetupsForDifferentialSystem2))[WheelIdx].WheelClass.GetDefaultObject();
+
+		//if (SteeringSetup.useOverrideSteerAngle)
+		//{
+		//	if (Wheel->bAffectedBySteering)
+		//	{
+		//		Wheel->MaxSteerAngle = SteeringSetup.overrideSteerAngle;
+		//	}
+		//}		
 
 		// create Dynamic states passing in pointer to their Static setup data
 		Chaos::FSimpleWheelSim WheelSim(&Wheel->GetPhysicsWheelConfig());
@@ -1624,6 +1631,15 @@ void UDynamicVehicleMovementComponent::SetupVehicle(TUniquePtr<Chaos::FSimpleWhe
 
 			float TorqueRatio = FTransmissionUtility::GetTorqueRatioForWheel(DifferentialSim, WheelIdx, PVehicle->Wheels);
 			PWheel.AccessSetup().TorqueRatio = TorqueRatio;
+			
+			//Use Override steering angle
+			if (SteeringSetup.useOverrideSteerAngle)
+			{
+				if (PWheel.SteeringEnabled)
+				{
+					PWheel.MaxSteeringAngle =  SteeringSetup.overrideSteerAngle;
+				}
+			}
 		}
 	}
 
@@ -3080,7 +3096,6 @@ void UDynamicVehicleMovementComponent::PostEditChangeProperty(struct FPropertyCh
 	else if (PropertyName == "vehicleHasTransferCase")
 		transferCaseConfig.isTransferCaseActive = false;
 
-
 	if (editDefaultRanges)
 	{
 		if (gasPedalMinValue >= gasPedalMaxValue)
@@ -4040,6 +4055,9 @@ void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
 			previousVehicleSpeed = 0;
 
 			SetThrottleInput(0);
+
+			derivedPtrForSimulationClass->dataImpactingSimulation.isFilled = false;
+			derivedPtrForSimulationClass->dataImpactingSimulation.isThrottleActive = false;
 		}
 		if (valueToSet == EEngineState::EngineIdle)
 		{
@@ -4049,6 +4067,8 @@ void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
 			previousVehicleSpeed = 0;
 
 			SetThrottleInput(0);
+			derivedPtrForSimulationClass->dataImpactingSimulation.isFilled = false;
+			derivedPtrForSimulationClass->dataImpactingSimulation.isThrottleActive = false;
 		}
 
 		currentEngineState = valueToSet;

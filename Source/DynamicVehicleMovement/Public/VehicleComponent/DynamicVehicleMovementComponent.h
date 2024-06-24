@@ -771,8 +771,16 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleSteeringConfig
 	EDynamicSteeringType SteeringType;
 
 	/** Only applies when AngleRatio is selected */
-	UPROPERTY(EditAnywhere/*, Category = SteeringSetup*/)
+	UPROPERTY(EditAnywhere/*, Category = SteeringSetup*/, meta = (EditCondition = "SteeringType==EDynamicSteeringType::AngleRatio"))
 	float AngleRatio;
+
+	UPROPERTY(EditAnywhere/*, Category = SteeringSetup*/)
+	//Whether to use steer angle mentioned in wheels, or the one mentioned inside coponent
+	bool useOverrideSteerAngle = false; 
+
+	UPROPERTY(EditAnywhere/*, Category = SteeringSetup*/, meta = (EditCondition = "useOverrideSteerAngle"))
+	//Wheel turn angle to override the angle mentioned in wheels
+	float overrideSteerAngle = 15;
 
 	/** Maximum steering versus forward speed (MPH) */
 	UPROPERTY(EditAnywhere/*, Category = SteeringSetup*/)
@@ -1114,6 +1122,7 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Wheels")
 	TArray<FDynamicWheelSetup> WheelSetupsForDifferentialSystem2;
+
 	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Wheels")
 	struct FCollisionResponseContainer WheelTraceCollisionResponses;
 
@@ -1639,7 +1648,6 @@ private:
 	TArray<FDynamicWheelStatus> WheelStatus; /** Wheel output status */
 	TArray<FCachedState> CachedState;
 	Chaos::FPerformanceMeasure PerformanceMeasure;
-	
 };
 
 //////////////////////////////////////////////////////////////////////////
