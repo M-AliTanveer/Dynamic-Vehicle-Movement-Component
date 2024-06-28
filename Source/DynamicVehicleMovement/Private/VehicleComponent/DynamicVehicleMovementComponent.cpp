@@ -3448,6 +3448,7 @@ FTransform UDynamicVehicleMovementComponent::GetCenterOfMass()
 
 float UDynamicVehicleMovementComponent::GetNetFuelIntake(float inputGasValue)
 {
+	float retValue = 0;
 	//break assist override
 	if (currentBreakAssistValue == true)
 	{
@@ -3461,12 +3462,15 @@ float UDynamicVehicleMovementComponent::GetNetFuelIntake(float inputGasValue)
 	{
 		if (inputGasValue != -1.0f)
 		{
-			return currentFuelHandleValue > inputGasValue ? (currentFuelHandleValue) : (inputGasValue);
+			retValue = currentFuelHandleValue > inputGasValue ? (currentFuelHandleValue) : (inputGasValue);
+			retValue = retValue * ((clutchPedalMaxValue - currentClutchPedalValue) / 100);
+			return retValue;
 		}
 		else
 		{
-			return currentFuelHandleValue > currentGasPedalValue ? (currentFuelHandleValue) : (currentGasPedalValue);
-
+			retValue = currentFuelHandleValue > currentGasPedalValue ? (currentFuelHandleValue) : (currentGasPedalValue);
+			retValue = retValue * ((clutchPedalMaxValue - currentClutchPedalValue) / 100);
+			return retValue;
 		}
 	}
 	else
@@ -3511,7 +3515,7 @@ bool UDynamicVehicleMovementComponent::ApplyGas(float gasPedalValue)
 		{
 			float tempGas;
 
-			tempGas = GetNetFuelIntake(gasPedalValue) * ((clutchPedalMaxValue - currentClutchPedalValue) / 100);
+			tempGas = GetNetFuelIntake(gasPedalValue);
 			//tempGas = gasPedalValue * ((clutchPedalMaxValue - currentClutchPedalValue) / 100);
 
 			float mappedGasValue = UKismetMathLibrary::MapRangeClamped(tempGas, gasPedalMinValue, gasPedalMaxValue, 0, 1);
@@ -3854,7 +3858,7 @@ void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
 			//The following processing may look repetetive but it is done in such a way to allow future processing to be added in any case.
 			if (currentEngineState == EEngineState::EngineOff)
 			{
-				if (GetNetFuelIntake() >= fuelValueToSustainIdleRPM)
+				if ((GetNetFuelIntake() >= fuelValueToSustainIdleRPM) || (GetNetFuelIntake() < fuelValueToSustainIdleRPM && currentClutchPedalValue> (clutchPedalMaxValue - clutchPedalMinValue)*0.1f ))
 				{
 					valueToSet = EEngineState::EngineIdle;
 					if (currentClutchPedalValue >= clutchThresholdValue)
@@ -3876,7 +3880,7 @@ void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
 			}
 			if (currentEngineState == EEngineState::EngineIdle)
 			{
-				if (GetNetFuelIntake() >= fuelValueToSustainIdleRPM)
+				if ((GetNetFuelIntake() >= fuelValueToSustainIdleRPM) || (GetNetFuelIntake() < fuelValueToSustainIdleRPM && currentClutchPedalValue> (clutchPedalMaxValue - clutchPedalMinValue)*0.1f ))
 				{
 					if (currentClutchPedalValue >= clutchThresholdValue)
 					{
@@ -3908,7 +3912,7 @@ void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
 			}
 			if (currentEngineState == EEngineState::EngineEngaged)
 			{
-				if (GetNetFuelIntake() >= fuelValueToSustainIdleRPM)
+				if ((GetNetFuelIntake() >= fuelValueToSustainIdleRPM) || (GetNetFuelIntake() < fuelValueToSustainIdleRPM && currentClutchPedalValue> (clutchPedalMaxValue - clutchPedalMinValue)*0.1f ))
 				{
 					if (currentClutchPedalValue >= clutchThresholdValue)
 					{
@@ -3982,7 +3986,7 @@ void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
 			}
 			if (currentEngineState == EEngineState::EngineGearChangeable)
 			{
-				if (GetNetFuelIntake() >= fuelValueToSustainIdleRPM)
+				if ((GetNetFuelIntake() >= fuelValueToSustainIdleRPM) || (GetNetFuelIntake() < fuelValueToSustainIdleRPM && currentClutchPedalValue> (clutchPedalMaxValue - clutchPedalMinValue)*0.1f ))
 				{
 					if (currentClutchPedalValue >= clutchThresholdValue)
 					{
@@ -4014,7 +4018,7 @@ void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
 			}
 			if (currentEngineState == EEngineState::EngineDisengaged)
 			{
-				if (GetNetFuelIntake() >= fuelValueToSustainIdleRPM)
+				if ((GetNetFuelIntake() >= fuelValueToSustainIdleRPM) || (GetNetFuelIntake() < fuelValueToSustainIdleRPM && currentClutchPedalValue> (clutchPedalMaxValue - clutchPedalMinValue)*0.1f ))
 				{
 					if (currentClutchPedalValue >= clutchThresholdValue)
 					{

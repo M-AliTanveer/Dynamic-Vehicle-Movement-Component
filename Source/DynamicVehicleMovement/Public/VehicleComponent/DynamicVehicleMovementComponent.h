@@ -747,11 +747,11 @@ enum class EDynamicSteeringType : uint8
 };
 
 UENUM()
-enum class ETransferCasePosition : uint8
+enum class ETransferCasePosition : int8
 {
-	LowRatio,	//Higher Torque, Lower Speed
-	Neutral,	//No Movement
-	HighRatio	//Higher Speed, Lower Torque
+	LowRatio = -1,	//Higher Torque, Lower Speed
+	Neutral = 0,	//No Movement
+	HighRatio = 1	//Higher Speed, Lower Torque
 };
 
 USTRUCT()
@@ -1530,7 +1530,7 @@ protected:
 
 	
 
-private:
+public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Differential Setup", meta = (DisplayName = "Is Using System 1 For Differential?", AllowPrivateAccess = "true"))
 	//True for System 1 in use, False for System 2. Default is System 2.
 	bool useSystem1ForDifferential = false; 
@@ -1618,6 +1618,7 @@ private:
 	//See GetNetFuelIntake() for more info
 	float fuelValueToSustainIdleRPM = 30;
 
+private:	
 	float previousEngineRPM; //caches last engine RPM values.
 	float previousVehicleSpeed = 0; //caches last vehicle speed
 
