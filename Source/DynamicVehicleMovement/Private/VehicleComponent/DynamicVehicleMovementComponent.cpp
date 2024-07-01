@@ -3218,20 +3218,23 @@ UDynamicVehicleMovementComponent::UDynamicVehicleMovementComponent(const FObject
 
 	currentTransferCaseRatio = transferCaseConfig.GetTransferCaseRatio();
 
-	/*auto var1 = GetOwner();
-	if (IsValid(var1))
+	if (vehicleLights.useVehicleLights)
 	{
-		auto var = var1->GetComponentsByTag(ULightComponent::StaticClass(), FName(vehicleLights.headLightLeftTag));
-		if (var.Num() > 0)
-		{
-			UActorComponent* component = var[0];
-			if (IsValid(component))
-			{
-				vehicleLights.headLightLeft = Cast<ULightComponent>(component);
-			}
-		}
-	}*/
-
+		vehicleLights.headLightLeft.OtherActor = GetOwner();
+		vehicleLights.headLightRight.OtherActor = GetOwner();
+		vehicleLights.fogLightLeft.OtherActor = GetOwner();
+		vehicleLights.fogLightRight.OtherActor = GetOwner();
+		vehicleLights.rearLightLeft.OtherActor = GetOwner();
+		vehicleLights.rearLightRight.OtherActor = GetOwner();
+		vehicleLights.brakeLightLeft.OtherActor = GetOwner();
+		vehicleLights.brakeLightRight.OtherActor = GetOwner();
+		vehicleLights.fogLightLeftRear.OtherActor = GetOwner();
+		vehicleLights.fogLightRightRear.OtherActor = GetOwner();
+		vehicleLights.turnLightLeft.OtherActor = GetOwner();
+		vehicleLights.turnLightLeftRear.OtherActor = GetOwner();
+		vehicleLights.turnLightRight.OtherActor = GetOwner();
+		vehicleLights.turnLightRightRear.OtherActor = GetOwner();
+	}
 
 #if WITH_EDITOR
 	UFunction* setGearFunc = StaticClass()->FindFunctionByName(FName("SetTargetGear"));
@@ -3616,17 +3619,17 @@ bool UDynamicVehicleMovementComponent::ApplyBrakes(float breakPedalValue)
 
 	if (vehicleLights.useVehicleLights)
 	{
-		if (IsValid(vehicleLights.brakeLightLeft) && IsValid(vehicleLights.brakeLightRight))
+		if (IsValid(vehicleLights.brakeLightLeft.fetchedLightComponent) && IsValid(vehicleLights.brakeLightRight.fetchedLightComponent))
 		{
 			if (mappedBreakValue > 0)
 			{
-				vehicleLights.brakeLightLeft->SetVisibility(true);
-				vehicleLights.brakeLightRight->SetVisibility(true);
+				vehicleLights.brakeLightLeft.fetchedLightComponent->SetVisibility(true);
+				vehicleLights.brakeLightRight.fetchedLightComponent->SetVisibility(true);
 			}
-			else if(currentInputs.currentHandbreakValue!=true && mappedBreakValue<=0 && currentInputs.currentBreakAssistValue!=true)
+			else if(IsBreakActiveInAnyForm(mappedBreakValue>0)!=true)
 			{
-				vehicleLights.brakeLightLeft->SetVisibility(false);
-				vehicleLights.brakeLightRight->SetVisibility(false);
+				vehicleLights.brakeLightLeft.fetchedLightComponent->SetVisibility(false);
+				vehicleLights.brakeLightRight.fetchedLightComponent->SetVisibility(false);
 			}
 		}
 	}
@@ -3725,22 +3728,28 @@ bool UDynamicVehicleMovementComponent::ChangeHandBrakeState(bool handBreakActive
 
 	if (vehicleLights.useVehicleLights)
 	{
-		if (IsValid(vehicleLights.brakeLightLeft) && IsValid(vehicleLights.brakeLightRight))
+		if (IsValid(vehicleLights.brakeLightLeft.fetchedLightComponent) && IsValid(vehicleLights.brakeLightRight.fetchedLightComponent))
 		{
 			if (handBreakActive)
 			{
-				vehicleLights.brakeLightLeft->SetVisibility(true);
-				vehicleLights.brakeLightRight->SetVisibility(true);
+				vehicleLights.brakeLightLeft.fetchedLightComponent->SetVisibility(true);
+				vehicleLights.brakeLightRight.fetchedLightComponent->SetVisibility(true);
 			}
-			else if (handBreakActive != true && currentInputs.currentBreakPedalValue <= breakPedalMinValue && currentInputs.currentBreakAssistValue != true)
+			else if (IsBreakActiveInAnyForm()!=true)
 			{
-				vehicleLights.brakeLightLeft->SetVisibility(false);
-				vehicleLights.brakeLightRight->SetVisibility(false);
+				vehicleLights.brakeLightLeft.fetchedLightComponent->SetVisibility(false);
+				vehicleLights.brakeLightRight.fetchedLightComponent->SetVisibility(false);
 			}
 		}
 	}
 
 	return true;
+}
+
+bool UDynamicVehicleMovementComponent::IsBreakActiveInAnyForm(bool overrideValue) const
+{
+	//checks for all forms of breaking.
+	return ((currentInputs.currentHandbreakValue) || (currentInputs.currentBreakPedalValue > breakPedalMinValue) || (currentInputs.currentBreakAssistValue) || overrideValue);
 }
 
 bool UDynamicVehicleMovementComponent::SetNewGear(int GearNum, bool changeImmediately)
@@ -3852,6 +3861,13 @@ bool UDynamicVehicleMovementComponent::SetEngineStarterValue(bool starterValue)
 	return true;
 }
 
+void UDynamicVehicleMovementComponent::BeginPlay()
+{
+	Super::BeginPlay();
+	vehicleLights.ExtractAll(GetOwner());
+}
+
+
 void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
@@ -3933,6 +3949,7 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 		}
 
 	}
+
 	//else
 	//	canEngineJumpStart = false;
 }

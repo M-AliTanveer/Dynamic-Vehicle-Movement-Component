@@ -11,6 +11,7 @@
 #include "Chaos/PBDSuspensionConstraints.h"
 #include "PhysicsProxy/SingleParticlePhysicsProxyFwd.h"
 #include "Components/LightComponent.h"
+#include "Engine/EngineTypes.h"
 #include "DynamicVehicleMovementComponent.generated.h"
 
 #if VEHICLE_DEBUGGING_ENABLED
@@ -1041,7 +1042,35 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicInputData
 	float currentFuelHandleValue = 0;
 };
 
+USTRUCT(BlueprintType)
+struct DYNAMICVEHICLEMOVEMENT_API FLightComponentReference :public FComponentReference
+{
+	GENERATED_BODY()
 
+	UPROPERTY(BlueprintReadOnly, Category = "Light Component Reference Structure")
+	ULightComponent* fetchedLightComponent;
+
+	UPROPERTY()
+	//Cache to make sure name has not changed
+	FName previousName;
+
+
+	bool ExtractLightComponent(AActor *Owner)
+	{
+		if (!IsValid(fetchedLightComponent) || ComponentProperty!=previousName)
+		{
+			previousName = ComponentProperty;
+			UActorComponent* componentFetched = GetComponent(Owner);
+			if (IsValid(componentFetched) && componentFetched->IsA(ULightComponent::StaticClass()))
+			{
+				fetchedLightComponent = Cast<ULightComponent>(componentFetched);
+				return true;
+			}
+			return false;
+		}
+		return false;
+	}
+};
 USTRUCT(BlueprintType)
 struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleLights
 {
@@ -1049,34 +1078,83 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleLights
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Use Vehicle Lights"))
 	bool useVehicleLights = true;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle HeadLight Left", EditCondition = "useVehicleLights"))
-	ULightComponent* headLightLeft = nullptr;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle HeadLight Right", EditCondition = "useVehicleLights"))
-	ULightComponent* headLightRight = nullptr;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Fog Light Left", EditCondition = "useVehicleLights"))
-	ULightComponent* fogLightLeft = nullptr;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Fog Light Right", EditCondition = "useVehicleLights"))
-	ULightComponent* fogLightRight = nullptr;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Brake Light Left", EditCondition = "useVehicleLights"))
-	ULightComponent* rearLightLeft = nullptr;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Brake Light Right", EditCondition = "useVehicleLights"))
-	ULightComponent* rearLightRight = nullptr;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Rear Light Left", EditCondition = "useVehicleLights"))
-	ULightComponent* brakeLightLeft = nullptr;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Rear Light Right", EditCondition = "useVehicleLights"))
-	ULightComponent* brakeLightRight = nullptr;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Fog Light Left Rear", EditCondition = "useVehicleLights"))
-	ULightComponent* fogLightLeftRear = nullptr;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Fog Light Right Rear", EditCondition = "useVehicleLights"))
-	ULightComponent* fogLightRightRear = nullptr;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Turn Light Left", EditCondition = "useVehicleLights"))
-	ULightComponent* turnLightLeft = nullptr;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Turn Light Right", EditCondition = "useVehicleLights"))
-	ULightComponent* turnLightLeftRear = nullptr;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Turn Light Left Rear", EditCondition = "useVehicleLights"))
-	ULightComponent* turnLightRight = nullptr;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Turn Light Right Rear", EditCondition = "useVehicleLights"))
-	ULightComponent* turnLightRightRear = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle HeadLight Left", EditCondition = "useVehicleLights", UseComponentPicker))
+	// Reference to LightComponent using Component Name. 
+ 	//On Instances, component picker will allow you to pick components from heirarchy 
+ 	FLightComponentReference headLightLeft ;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle HeadLight Right", EditCondition = "useVehicleLights", UseComponentPicker))
+	// Reference to LightComponent using Component Name. 
+ 	//On Instances, component picker will allow you to pick components from heirarchy 
+ 	FLightComponentReference headLightRight ;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Fog Light Left", EditCondition = "useVehicleLights", UseComponentPicker))
+	// Reference to LightComponent using Component Name. 
+ 	//On Instances, component picker will allow you to pick components from heirarchy 
+ 	FLightComponentReference fogLightLeft ;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Fog Light Right", EditCondition = "useVehicleLights", UseComponentPicker))
+	// Reference to LightComponent using Component Name. 
+ 	 //On Instances, component picker will allow you to pick components from heirarchy 
+ 	FLightComponentReference fogLightRight ;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Rear Light Left", EditCondition = "useVehicleLights", UseComponentPicker))
+	// Reference to LightComponent using Component Name. 
+ 	//On Instances, component picker will allow you to pick components from heirarchy 
+ 	FLightComponentReference rearLightLeft ;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Rear Light Right", EditCondition = "useVehicleLights", UseComponentPicker))
+	// Reference to LightComponent using Component Name. 
+ 	//On Instances, component picker will allow you to pick components from heirarchy 
+ 	FLightComponentReference rearLightRight ;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Brake Light Left", EditCondition = "useVehicleLights", UseComponentPicker))
+	// Reference to LightComponent using Component Name. 
+ 	//On Instances, component picker will allow you to pick components from heirarchy 
+ 	FLightComponentReference brakeLightLeft ;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Brake Light Right", EditCondition = "useVehicleLights", UseComponentPicker))
+	// Reference to LightComponent using Component Name. 
+ 	//On Instances, component picker will allow you to pick components from heirarchy 
+ 	FLightComponentReference brakeLightRight ;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Fog Light Left Rear", EditCondition = "useVehicleLights", UseComponentPicker))
+	// Reference to LightComponent using Component Name. 
+ 	//On Instances, component picker will allow you to pick components from heirarchy 
+	FLightComponentReference fogLightLeftRear ;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Fog Light Right Rear", EditCondition = "useVehicleLights", UseComponentPicker))
+	// Reference to LightComponent using Component Name. 
+ 	//On Instances, component picker will allow you to pick components from heirarchy 
+ 	FLightComponentReference fogLightRightRear ;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Turn Light Left", EditCondition = "useVehicleLights", UseComponentPicker))
+	// Reference to LightComponent using Component Name. 
+ 	//On Instances, component picker will allow you to pick components from heirarchy 
+ 	FLightComponentReference turnLightLeft ;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Turn Light Right", EditCondition = "useVehicleLights", UseComponentPicker))
+	// Reference to LightComponent using Component Name. 
+ 	//On Instances, component picker will allow you to pick components from heirarchy 
+ 	FLightComponentReference turnLightLeftRear ;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Turn Light Left Rear", EditCondition = "useVehicleLights", UseComponentPicker))
+	// Reference to LightComponent using Component Name. 
+ 	//On Instances, component picker will allow you to pick components from heirarchy 
+ 	FLightComponentReference turnLightRight ;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Turn Light Right Rear", EditCondition = "useVehicleLights", UseComponentPicker))
+	// Reference to LightComponent using Component Name. 
+ 	//On Instances, component picker will allow you to pick components from heirarchy 
+ 	FLightComponentReference turnLightRightRear ;
+
+	void ExtractAll(AActor *Owner)
+	{
+		if (useVehicleLights)
+		{
+			headLightLeft.ExtractLightComponent(Owner);
+			headLightRight.ExtractLightComponent(Owner);
+			fogLightLeft.ExtractLightComponent(Owner);
+			fogLightRight.ExtractLightComponent(Owner);
+			rearLightLeft.ExtractLightComponent(Owner);
+			rearLightRight.ExtractLightComponent(Owner);
+			brakeLightLeft.ExtractLightComponent(Owner);
+			brakeLightRight.ExtractLightComponent(Owner);
+			fogLightLeftRear.ExtractLightComponent(Owner);
+			fogLightRightRear.ExtractLightComponent(Owner);
+			turnLightLeft.ExtractLightComponent(Owner);
+			turnLightLeftRear.ExtractLightComponent(Owner);
+			turnLightRight.ExtractLightComponent(Owner);
+			turnLightRightRear.ExtractLightComponent(Owner);
+		}
+	}
 };
 //////////////////////////////////////////////////////////////////////////
 
@@ -1173,6 +1251,7 @@ public:
 	// Called every frame
 	void TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction);
 
+	virtual void BeginPlay() override;
 
 	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Wheels")
 	bool bSuspensionEnabled;
@@ -1488,6 +1567,10 @@ public:
 	//Get Transfer Case configuration
 	FDyamicTransferCaseConfig GetTransferCaseConfig() const;
 
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement", BlueprintPure)
+	//Returns whether any form of break is active?
+	bool IsBreakActiveInAnyForm(bool overrideValue = false) const;
+
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Differential System") 
 	//Set New Active Differential System. True to activate system 1, false for system 2. Truck needs to be in neutral and rest. Will return true if system changed. You can use failure reason for deubg.
 	bool SetActiveSystemForDifferential(bool UseSystem1, FString& failureReason);
@@ -1690,10 +1773,15 @@ private:
 	//The threshold value at which engine can sustain idle RPM. Includes Net Intake from Gas Pedal and Manual Handle. 
 	//See GetNetFuelIntake() for more info
 	float fuelValueToSustainIdleRPM = 30;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Use Vehicle Lights", AllowPrivateAccess="true"))
+	int lightRef;
+
+
 	float previousEngineRPM; //caches last engine RPM values.
 	float previousVehicleSpeed = 0; //caches last vehicle speed
 
-	UDynamicVehicleSimulation* derivedPtrForSimulationClass = nullptr;
+	UDynamicVehicleSimulation* derivedPtrForSimulationClass ;
 
 	/** Get distances between wheels - primarily a debug display helper */
 	FVector2D CalculateWheelLayoutDimensions();
