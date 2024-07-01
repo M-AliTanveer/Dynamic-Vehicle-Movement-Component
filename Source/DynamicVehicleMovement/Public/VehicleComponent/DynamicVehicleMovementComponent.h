@@ -10,6 +10,7 @@
 #include "VehicleUtility.h"
 #include "Chaos/PBDSuspensionConstraints.h"
 #include "PhysicsProxy/SingleParticlePhysicsProxyFwd.h"
+#include "Components/LightComponent.h"
 #include "DynamicVehicleMovementComponent.generated.h"
 
 #if VEHICLE_DEBUGGING_ENABLED
@@ -942,7 +943,7 @@ private:
 	bool isVehicleAutomaticTransmission = false;
 };
 
-USTRUCT(BlueprintType)
+USTRUCT()
 struct DYNAMICVEHICLEMOVEMENT_API FDynamicSimulationData
 {
 	GENERATED_BODY()
@@ -1011,7 +1012,72 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicSimulationData
 
 };
 
+USTRUCT(BlueprintType)
+//all inputs for vehicle bundled together
+struct DYNAMICVEHICLEMOVEMENT_API FDynamicInputData 
+{
+	GENERATED_BODY()
 
+	UPROPERTY(BlueprintReadOnly,  meta = (DisplayName = "Gas Pedal Current Value", AllowPrivateAccess = "true"))
+	//gas pedal value ranges between 0 and 100 by default
+	float currentGasPedalValue = 0;
+	UPROPERTY(BlueprintReadOnly,  meta = (DisplayName = "Break Pedal Current Value", AllowPrivateAccess = "true"))
+	//break pedal value ranges between 0 and 100 by default
+	float currentBreakPedalValue = 0;
+	UPROPERTY(BlueprintReadOnly,  meta = (DisplayName = "Clutch Pedal Current Value", AllowPrivateAccess = "true"))
+	//clutch pedal value ranges between 0 and 100 by default
+	float currentClutchPedalValue = 0;
+	UPROPERTY(BlueprintReadOnly,  meta = (DisplayName = "Steering Wheel Current Value", AllowPrivateAccess = "true"))
+	//steering wheel value ranges between 0 and 100 by default, with 50 in middle, 0 for complete left turn and 100 for complete right turn
+	float currentSteeringWheelValue = 50;
+	UPROPERTY(BlueprintReadOnly,  meta = (DisplayName = "Is Handbreak Active?", AllowPrivateAccess = "true"))
+	//handbreak value is true for active handbreak and false for inactive handbreak
+	bool currentHandbreakValue = false;
+	UPROPERTY(BlueprintReadOnly,  meta = (DisplayName = "Is Break Assist Active?", AllowPrivateAccess = "true"))
+	//Break assist value is true for active break assist and false for inactive break assist
+	bool currentBreakAssistValue = false;
+	UPROPERTY(BlueprintReadOnly,  meta = (DisplayName = "Fuel Handle Current Value", AllowPrivateAccess = "true"))
+	//Fuel handle value ranges between 0 and 100 by default and determines fuel intake into engine wihtout gas pedal.
+	float currentFuelHandleValue = 0;
+};
+
+
+USTRUCT(BlueprintType)
+struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleLights
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Use Vehicle Lights"))
+	bool useVehicleLights = true;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle HeadLight Left", EditCondition = "useVehicleLights"))
+	ULightComponent* headLightLeft = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle HeadLight Right", EditCondition = "useVehicleLights"))
+	ULightComponent* headLightRight = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Fog Light Left", EditCondition = "useVehicleLights"))
+	ULightComponent* fogLightLeft = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Fog Light Right", EditCondition = "useVehicleLights"))
+	ULightComponent* fogLightRight = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Brake Light Left", EditCondition = "useVehicleLights"))
+	ULightComponent* rearLightLeft = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Brake Light Right", EditCondition = "useVehicleLights"))
+	ULightComponent* rearLightRight = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Rear Light Left", EditCondition = "useVehicleLights"))
+	ULightComponent* brakeLightLeft = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Rear Light Right", EditCondition = "useVehicleLights"))
+	ULightComponent* brakeLightRight = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Fog Light Left Rear", EditCondition = "useVehicleLights"))
+	ULightComponent* fogLightLeftRear = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Fog Light Right Rear", EditCondition = "useVehicleLights"))
+	ULightComponent* fogLightRightRear = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Turn Light Left", EditCondition = "useVehicleLights"))
+	ULightComponent* turnLightLeft = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Turn Light Right", EditCondition = "useVehicleLights"))
+	ULightComponent* turnLightLeftRear = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Turn Light Left Rear", EditCondition = "useVehicleLights"))
+	ULightComponent* turnLightRight = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Turn Light Right Rear", EditCondition = "useVehicleLights"))
+	ULightComponent* turnLightRightRear = nullptr;
+};
 //////////////////////////////////////////////////////////////////////////
 
 class DYNAMICVEHICLEMOVEMENT_API UDynamicVehicleSimulation : public UChaosVehicleSimulation
@@ -1076,6 +1142,8 @@ public:
 	/** Draw 3D debug lines and things along side the 3D model */
 	virtual void DrawDebug3D() override;
 
+	float GetRelativeEngineRPM_FromSpeed(float currentSpeed = 0);
+
 	FDynamicWheelState WheelState;	/** Cached state that holds wheel data for this frame */
 
 	TArray<FPhysicsConstraintHandle> ConstraintHandles;
@@ -1090,7 +1158,6 @@ public:
 private:
 	float targetRPM_BasedOnFuel = 0;
 };
-
 
 /**
  * 
@@ -1360,6 +1427,30 @@ public:
 	//Returns wether differential system can be changed.
 	bool CanChangeDifferentialSystem();	
 
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System", BlueprintPure)
+	//Returns wether high ratios are in use or low
+	bool IsUsingHighGears() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement", BlueprintPure)
+	//Returns wether engine is started or not
+	bool IsEngineStarted() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement", BlueprintPure)
+	//Returns wether vehicle is accelerating or decelerating
+	bool IsVehicleCurrentlyAccelerating() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement", BlueprintPure)
+	//Returns current Engine State.
+	EEngineState GetCurrentEngineState() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement", BlueprintPure)
+	//Returns wether vehicle is automatic or manual
+	bool IsVehicleUsingAutomaticTransmission() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Input", BlueprintPure)
+	//Returns current vehicle input structure
+	FDynamicInputData GetCurrentInputData() const;
+
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transfer Case System", BlueprintPure)
 	//Returns wether differential system can be changed.
 	bool CanChangeTransferCasePosition();
@@ -1369,24 +1460,16 @@ public:
 	int GetCurrentActiveGear() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System", BlueprintPure)
-	//Returns Current Gear's ratio. Takes into account high/low gear switch. Returns with final ratio multiplied
+	//Returns Current Gear's ratio. Takes into account high/low gear switch. Returns with final ratio and transfer case ratio multiplied
 	float GetCurrentActiveGearRatio() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System", BlueprintPure)
 	//Final Gear ratio is multiplied with each individual gear's ratio. This eliminates that effect and returns true gear ratio.
 	float GetCurrentActiveGearRatioWithoutFinalGearRatioAffect() const;
 
-	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System", BlueprintPure)
-	//Returns wether high ratios are in use or low
-	bool IsUsingHighGears() const;
-
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement", BlueprintPure)
 	//Returns speed in Kilometers Per hour
 	float GetVehicleSpeedInKM_PerHour() const;
-
-	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement", BlueprintPure)
-	//Returns current Engine State.
-	EEngineState GetEngineStatus() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Miscellanous", BlueprintPure)
 	//Returns vehicle center of mass. Center of mass affects handling a lot. Use this to debug.
@@ -1396,6 +1479,14 @@ public:
 	//Returns net fuel intake taking into account manual fuel handle and gas input. Base implementation only returns greater value of the two.
 	//If input != -1, then input will be used to evaluate instead of gas input
 	virtual float GetNetFuelIntake(float inputGasValue = -1.0f);
+
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Functionalities", BlueprintPure)
+	//Get structure representing active vehicle functionalities
+	FDynamicFunctionalities GetActiveVehicleFunctionalities() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transfer Case System", BlueprintPure)
+	//Get Transfer Case configuration
+	FDyamicTransferCaseConfig GetTransferCaseConfig() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Differential System") 
 	//Set New Active Differential System. True to activate system 1, false for system 2. Truck needs to be in neutral and rest. Will return true if system changed. You can use failure reason for deubg.
@@ -1528,59 +1619,41 @@ protected:
 		return WheelTrackDimensions;
 	}
 
-	
-
-public:
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Differential Setup", meta = (DisplayName = "Is Using System 1 For Differential?", AllowPrivateAccess = "true"))
+private:
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement", meta = (DisplayName = "Is Using System 1 For Differential?"))
 	//True for System 1 in use, False for System 2. Default is System 2.
 	bool useSystem1ForDifferential = false; 
-	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Transmission System", meta = (DisplayName = "Is Using High Gear Ratios?", AllowPrivateAccess = "true"))
+	UPROPERTY()
 	//True for High gear ratios being used. False for low gears. Default is High Gears
 	bool usingHighGears = true; 
-	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Movement", meta = (DisplayName = "Is Vehicle Started?", AllowPrivateAccess = "true"))
+	UPROPERTY()
 	//True for Engine Started. False for Engine off
 	bool currentEngineStartedValue = false; 
-	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Movement", meta = (DisplayName = "Is Vehcile Accelerating?", AllowPrivateAccess = "true"))
+	UPROPERTY()
 	//True for accelerating, False for decelrating. May behave oddly at speed = 0.
 	bool isVehicleAccelerating = false; 
-	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Movement", meta = (DisplayName = "Vehicle Engine State", AllowPrivateAccess = "true"))
+	UPROPERTY()
 	//Engine State values. Alters between varios states
-	EEngineState currentEngineState = EEngineState::EngineOff; 
-	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Movement", meta = (DisplayName = "Gas Pedal Current Value", AllowPrivateAccess = "true"))
-	//gas pedal value ranges between 0 and 100
-	float currentGasPedalValue = 0; 
-	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Movement", meta = (DisplayName = "Break Pedal Current Value", AllowPrivateAccess = "true"))
-	//break pedal value ranges between 0 and 100
-	float currentBreakPedalValue = 0; 
-	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Movement", meta = (DisplayName = "Clutch Pedal Current Value", AllowPrivateAccess = "true"))
-	//clutch pedal value ranges between 0 and 100
-	float currentClutchPedalValue = 0; 
-	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Movement", meta = (DisplayName = "Steering Wheel Current Value", AllowPrivateAccess = "true"))
-	//steering wheel value ranges between 0 and 100, with 50 in middle, 0 for complete left turn and 100 for complete right turn
-	float currentSteeringWheelValue = 50; 
-	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Movement", meta = (DisplayName = "Is Handbreak Active?", AllowPrivateAccess = "true"))
-	//handbreak value is true for active handbreak and false for inactive handbreak
-	bool currentHandbreakValue = false; 
-	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Movement", meta = (DisplayName = "Is Break Assist Active?", AllowPrivateAccess = "true"))
-	//Break assist value is true for active break assist and false for inactive break assist
-	bool currentBreakAssistValue = false; 
-	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Movement", meta = (DisplayName = "Fuel Handle Current Value", AllowPrivateAccess = "true"))
-	//Fuel handle value ranges between 0 and 100 and determines fuel intake into engine.
-	float currentFuelHandleValue = 0; 
+	EEngineState currentEngineState = EEngineState::EngineOff;  
 	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Transfer Case System", meta = (DisplayName = "Current InUse Transfer Case Ratio", AllowPrivateAccess = "true"))
 	//Ratio being applied by the transfer case system.
 	float currentTransferCaseRatio = 1;
-
-
-
-	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement", meta = (DisplayName = "Vehicle has automatic transmission?", AllowPrivateAccess = "true", DisplayAfter = "bMechanicalSimEnabled"))
+	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Movement", meta = (DisplayName = "Can Engine Jump Start", AllowPrivateAccess = "true"))
+	//Whether vehicle meets engine jump start requriements currently
+	bool canEngineJumpStart = false;
+	UPROPERTY()
+	FDynamicInputData currentInputs;
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement", meta = (DisplayName = "Vehicle has automatic transmission?", DisplayAfter = "bMechanicalSimEnabled"))
 	//True = Automatic Car. False = Manual Car
 	bool isVehicleAutomatic = false;
-	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement", meta = (DisplayName = "Vehicle Optional Functionalities", AllowPrivateAccess = "true", DisplayAfter = "bMechanicalSimEnabled"))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement", meta = (DisplayName = "Vehicle Optional Functionalities", DisplayAfter = "bMechanicalSimEnabled"))
 	FDynamicFunctionalities vehicleFunctionalities;
-	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement", meta = (DisplayName = "Transfer Case System", AllowPrivateAccess = "true", DisplayAfter = "vehicleFunctionalities"))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement", meta = (DisplayName = "Transfer Case System", DisplayAfter = "vehicleFunctionalities"))
 	FDyamicTransferCaseConfig transferCaseConfig;
-	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Defaults", meta = (DisplayName = "Edit Default Input Ranges", AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement", meta = (DisplayName = "Vehicle Lights", AllowPrivateAccess = "true"))
+	FDynamicVehicleLights vehicleLights;
+	
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Defaults", meta = (DisplayName = "Edit Default Input Ranges"))
 	//Allows to edit default input ranges.
 	bool editDefaultRanges = false;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Defaults|Transmission System", meta = (DisplayName = "Clutch Threshold Value", AllowPrivateAccess = "true", EditCondition="editDefaultRanges&&isVehicleAutomatic==false"))
@@ -1617,8 +1690,6 @@ public:
 	//The threshold value at which engine can sustain idle RPM. Includes Net Intake from Gas Pedal and Manual Handle. 
 	//See GetNetFuelIntake() for more info
 	float fuelValueToSustainIdleRPM = 30;
-
-private:	
 	float previousEngineRPM; //caches last engine RPM values.
 	float previousVehicleSpeed = 0; //caches last vehicle speed
 
@@ -1626,6 +1697,7 @@ private:
 
 	/** Get distances between wheels - primarily a debug display helper */
 	FVector2D CalculateWheelLayoutDimensions();
+
 
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
 	float CalcDialAngle(float CurrentValue, float MaxValue);

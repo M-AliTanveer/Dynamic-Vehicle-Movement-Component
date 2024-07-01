@@ -26,6 +26,8 @@
 #include "Kismet/KismetMathLibrary.h"
 #include "PhysicsProxy/SuspensionConstraintProxy.h"
 #include "PBDRigidsSolver.h"
+#include "Components/LightComponent.h"
+
 
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
 #include "CanvasItem.h"
@@ -177,7 +179,6 @@ void UDynamicVehicleSimulation::TickVehicle(UWorld* WorldIn, float DeltaTime, co
 
 	UChaosVehicleSimulation::TickVehicle(WorldIn, DeltaTime, InputData, OutputData, Handle);
 }
-
 
 void UDynamicVehicleSimulation::UpdateState(float DeltaTime, const FChaosVehicleAsyncInput& InputData, Chaos::FRigidBodyHandle_Internal* Handle)
 {
@@ -1161,6 +1162,30 @@ void UDynamicVehicleSimulation::DrawDebug3D()
 		}
 	}
 #endif
+}
+
+float UDynamicVehicleSimulation::GetRelativeEngineRPM_FromSpeed(float currentSpeed)
+{
+	if (PVehicle->HasEngine())
+	{
+		auto& PEngine = PVehicle->GetEngine();
+		auto& PTransmission = PVehicle->GetTransmission();
+		
+		float engineRPM = 0;
+		currentSpeed /= 2; 
+		if (PTransmission.GetCurrentGear() > 0)
+			engineRPM = UKismetMathLibrary::MapRangeClamped(currentSpeed, dataImpactingSimulation.transmissionData.GetMinimumSpeedForGear((PTransmission.GetCurrentGear() + 1) / 2 - 1, true),
+				dataImpactingSimulation.transmissionData.GetMaximumSpeedForGear((PTransmission.GetCurrentGear() + 1) / 2 - 1, true),
+				0, dataImpactingSimulation.engineData.MaxRPM);
+		else if(PTransmission.GetCurrentGear() < 0)
+			engineRPM = UKismetMathLibrary::MapRangeClamped(currentSpeed, dataImpactingSimulation.transmissionData.GetMinimumSpeedForGear((PTransmission.GetCurrentGear() - 1) / 2 + 1, false),
+				dataImpactingSimulation.transmissionData.GetMaximumSpeedForGear((PTransmission.GetCurrentGear() - 1) / 2 + 1, false),
+				0, dataImpactingSimulation.engineData.MaxRPM);
+
+		return engineRPM;
+	}
+	return 0;
+
 }
 
 void UDynamicVehicleSimulation::FillOutputState(FChaosVehicleAsyncOutput& Output)
@@ -3096,6 +3121,7 @@ void UDynamicVehicleMovementComponent::PostEditChangeProperty(struct FPropertyCh
 	else if (PropertyName == "vehicleHasTransferCase")
 		transferCaseConfig.isTransferCaseActive = false;
 
+
 	if (editDefaultRanges)
 	{
 		if (gasPedalMinValue >= gasPedalMaxValue)
@@ -3191,6 +3217,21 @@ UDynamicVehicleMovementComponent::UDynamicVehicleMovementComponent(const FObject
 	TransmissionSetup.SetTransferCaseModifier(transferCaseConfig.GetTransferCaseRatio());
 
 	currentTransferCaseRatio = transferCaseConfig.GetTransferCaseRatio();
+
+	/*auto var1 = GetOwner();
+	if (IsValid(var1))
+	{
+		auto var = var1->GetComponentsByTag(ULightComponent::StaticClass(), FName(vehicleLights.headLightLeftTag));
+		if (var.Num() > 0)
+		{
+			UActorComponent* component = var[0];
+			if (IsValid(component))
+			{
+				vehicleLights.headLightLeft = Cast<ULightComponent>(component);
+			}
+		}
+	}*/
+
 
 #if WITH_EDITOR
 	UFunction* setGearFunc = StaticClass()->FindFunctionByName(FName("SetTargetGear"));
@@ -3415,6 +3456,16 @@ bool UDynamicVehicleMovementComponent::IsUsingHighGears() const
 	return usingHighGears&& vehicleFunctionalities.vehicleHasHighLowGears;
 }
 
+bool UDynamicVehicleMovementComponent::IsEngineStarted() const
+{
+	return currentEngineStartedValue;
+}
+
+bool UDynamicVehicleMovementComponent::IsVehicleCurrentlyAccelerating() const
+{
+	return isVehicleAccelerating;
+}
+
 void UDynamicVehicleMovementComponent::ChangeTransmissionSystem(bool useHighGears = true)
 {
 	if (vehicleFunctionalities.vehicleHasHighLowGears)
@@ -3431,9 +3482,19 @@ float UDynamicVehicleMovementComponent::GetVehicleSpeedInKM_PerHour() const
 	return UKismetMathLibrary::Abs(Chaos::CmSToKmH(GetForwardSpeed()));
 }
 
-EEngineState UDynamicVehicleMovementComponent::GetEngineStatus() const
+EEngineState UDynamicVehicleMovementComponent::GetCurrentEngineState() const
 {
 	return currentEngineState;
+}
+
+bool UDynamicVehicleMovementComponent::IsVehicleUsingAutomaticTransmission() const
+{
+	return isVehicleAutomatic;
+}
+
+FDynamicInputData UDynamicVehicleMovementComponent::GetCurrentInputData() const
+{
+	return currentInputs;
 }
 
 FTransform UDynamicVehicleMovementComponent::GetCenterOfMass()
@@ -3450,7 +3511,7 @@ float UDynamicVehicleMovementComponent::GetNetFuelIntake(float inputGasValue)
 {
 	float retValue = 0;
 	//break assist override
-	if (currentBreakAssistValue == true)
+	if (currentInputs.currentBreakAssistValue == true)
 	{
 		if (GetVehicleSpeedInKM_PerHour() > 5)
 			return fuelValueToSustainIdleRPM;
@@ -3462,14 +3523,14 @@ float UDynamicVehicleMovementComponent::GetNetFuelIntake(float inputGasValue)
 	{
 		if (inputGasValue != -1.0f)
 		{
-			retValue = currentFuelHandleValue > inputGasValue ? (currentFuelHandleValue) : (inputGasValue);
-			retValue = retValue * ((clutchPedalMaxValue - currentClutchPedalValue) / 100);
+			retValue = currentInputs.currentFuelHandleValue > inputGasValue ? (currentInputs.currentFuelHandleValue) : (inputGasValue);
+			retValue = retValue * ((clutchPedalMaxValue - currentInputs.currentClutchPedalValue) / 100);
 			return retValue;
 		}
 		else
 		{
-			retValue = currentFuelHandleValue > currentGasPedalValue ? (currentFuelHandleValue) : (currentGasPedalValue);
-			retValue = retValue * ((clutchPedalMaxValue - currentClutchPedalValue) / 100);
+			retValue = currentInputs.currentFuelHandleValue > currentInputs.currentGasPedalValue ? (currentInputs.currentFuelHandleValue) : (currentInputs.currentGasPedalValue);
+			retValue = retValue * ((clutchPedalMaxValue - currentInputs.currentClutchPedalValue) / 100);
 			return retValue;
 		}
 	}
@@ -3481,11 +3542,21 @@ float UDynamicVehicleMovementComponent::GetNetFuelIntake(float inputGasValue)
 		}
 		else
 		{
-			return currentGasPedalValue;
+			return currentInputs.currentGasPedalValue;
 
 		}
 	}
 
+}
+
+FDynamicFunctionalities UDynamicVehicleMovementComponent::GetActiveVehicleFunctionalities() const
+{
+	return vehicleFunctionalities;
+}
+
+FDyamicTransferCaseConfig UDynamicVehicleMovementComponent::GetTransferCaseConfig() const
+{
+	return transferCaseConfig;
 }
 
 bool UDynamicVehicleMovementComponent::ApplyGas(float gasPedalValue)
@@ -3496,16 +3567,16 @@ bool UDynamicVehicleMovementComponent::ApplyGas(float gasPedalValue)
 		{
 			float mappedGasValue = UKismetMathLibrary::MapRangeClamped(gasPedalValue, gasPedalMinValue, gasPedalMaxValue, 0, 1);
 			SetThrottleInput(mappedGasValue);
-			currentGasPedalValue = gasPedalValue;
-			if (currentEngineState == EEngineState::EngineIdle && currentGasPedalValue > gasPedalMinValue)
+			currentInputs.currentGasPedalValue = gasPedalValue;
+			if (currentEngineState == EEngineState::EngineIdle && currentInputs.currentGasPedalValue > gasPedalMinValue)
 				UpdateVehicleEngineState();
-			if (currentEngineState == EEngineState::EngineEngaged && currentGasPedalValue == gasPedalMinValue)
+			if (currentEngineState == EEngineState::EngineEngaged && currentInputs.currentGasPedalValue == gasPedalMinValue)
 				UpdateVehicleEngineState();
 			return true;
 		}
 		else
 		{
-			currentGasPedalValue = gasPedalValue;
+			currentInputs.currentGasPedalValue = gasPedalValue;
 			return false;
 		}
 	}
@@ -3520,18 +3591,18 @@ bool UDynamicVehicleMovementComponent::ApplyGas(float gasPedalValue)
 
 			float mappedGasValue = UKismetMathLibrary::MapRangeClamped(tempGas, gasPedalMinValue, gasPedalMaxValue, 0, 1);
 			SetThrottleInput(mappedGasValue);
-			currentGasPedalValue = gasPedalValue;
+			currentInputs.currentGasPedalValue = gasPedalValue;
 			return true;
 		}
 		else if (currentEngineState == EEngineState::EngineDisengaged)
 		{
 			SetThrottleInput(0);
-			currentGasPedalValue = 0;
+			currentInputs.currentGasPedalValue = 0;
 			return true;
 		}
 		else
 		{
-			currentGasPedalValue = gasPedalValue;
+			currentInputs.currentGasPedalValue = gasPedalValue;
 			return false;
 		}
 	}
@@ -3539,22 +3610,32 @@ bool UDynamicVehicleMovementComponent::ApplyGas(float gasPedalValue)
 
 bool UDynamicVehicleMovementComponent::ApplyBrakes(float breakPedalValue)
 {
-	currentBreakPedalValue = breakPedalValue;
-	if (currentEngineState != EEngineState::EngineOff)
+	currentInputs.currentBreakPedalValue = breakPedalValue;
+	float mappedBreakValue = UKismetMathLibrary::MapRangeClamped(breakPedalValue, breakPedalMinValue, breakPedalMaxValue, 0, 1);
+	SetBrakeInput(mappedBreakValue);
+
+	if (vehicleLights.useVehicleLights)
 	{
-		float mappedBreakValue = UKismetMathLibrary::MapRangeClamped(breakPedalValue, breakPedalMinValue, breakPedalMaxValue, 0, 1);
-		SetBrakeInput(mappedBreakValue);
-		return true;
+		if (IsValid(vehicleLights.brakeLightLeft) && IsValid(vehicleLights.brakeLightRight))
+		{
+			if (mappedBreakValue > 0)
+			{
+				vehicleLights.brakeLightLeft->SetVisibility(true);
+				vehicleLights.brakeLightRight->SetVisibility(true);
+			}
+			else if(currentInputs.currentHandbreakValue!=true && mappedBreakValue<=0 && currentInputs.currentBreakAssistValue!=true)
+			{
+				vehicleLights.brakeLightLeft->SetVisibility(false);
+				vehicleLights.brakeLightRight->SetVisibility(false);
+			}
+		}
 	}
-	else
-	{
-		return false;
-	}
+	return true;
 }
 
 bool UDynamicVehicleMovementComponent::SteerVehicle(float steeringWheelValue)
 {
-	currentSteeringWheelValue = steeringWheelValue;
+	currentInputs.currentSteeringWheelValue = steeringWheelValue;
 	float mappedSteerValue = UKismetMathLibrary::MapRangeClamped(steeringWheelValue, steerWheelMinValue, steerWheelMaxValue, -1, 1);
 	SetSteeringInput(mappedSteerValue);
 	return true;
@@ -3569,32 +3650,39 @@ bool UDynamicVehicleMovementComponent::ApplyClutch(float clutchPedalValue)
 	}
 	else
 	{
-		if (currentClutchPedalValue < clutchThresholdValue && clutchPedalValue >= clutchThresholdValue)
+		if (currentInputs.currentClutchPedalValue < clutchThresholdValue && clutchPedalValue >= clutchThresholdValue)
 		{
-			currentClutchPedalValue = clutchPedalValue;
+			currentInputs.currentClutchPedalValue = clutchPedalValue;
 			UpdateVehicleEngineState();
 
 			//currentGasPedalValue < 1 (for range 0-100)
 			if (GetNetFuelIntake() < (gasPedalMinValue + (gasPedalMaxValue - gasPedalMinValue) * .01f))
 			{
-				float throttleWhenLeavingClutch = (clutchPedalMaxValue - currentClutchPedalValue) * .2;
+				float throttleWhenLeavingClutch = (clutchPedalMaxValue - currentInputs.currentClutchPedalValue) * .2;
 				SetThrottleInput(UKismetMathLibrary::MapRangeClamped(throttleWhenLeavingClutch, gasPedalMinValue, gasPedalMaxValue, 0, 1));
 			}
 
 		}
-		else if (currentClutchPedalValue >= clutchThresholdValue && clutchPedalValue < clutchThresholdValue)
+		else if (currentInputs.currentClutchPedalValue >= clutchThresholdValue && clutchPedalValue < clutchThresholdValue)
 		{
-			currentClutchPedalValue = clutchPedalValue;
+			currentInputs.currentClutchPedalValue = clutchPedalValue;
+			if (canEngineJumpStart)
+			{
+				SetEngineStarterValue(true);
+			}
+			else
+			{
+				UpdateVehicleEngineState();
+			}
+		}
+		else if (currentInputs.currentClutchPedalValue >= clutchDisengagementValue && clutchPedalValue < clutchDisengagementValue)
+		{
+			currentInputs.currentClutchPedalValue = clutchPedalValue;
 			UpdateVehicleEngineState();
 		}
-		else if (currentClutchPedalValue >= clutchDisengagementValue && clutchPedalValue < clutchDisengagementValue)
+		else if (currentInputs.currentClutchPedalValue < clutchDisengagementValue && clutchPedalValue >= clutchDisengagementValue)
 		{
-			currentClutchPedalValue = clutchPedalValue;
-			UpdateVehicleEngineState();
-		}
-		else if (currentClutchPedalValue < clutchDisengagementValue && clutchPedalValue >= clutchDisengagementValue)
-		{
-			currentClutchPedalValue = clutchPedalValue;
+			currentInputs.currentClutchPedalValue = clutchPedalValue;
 			UpdateVehicleEngineState();
 		}
 		else if ( clutchPedalValue < clutchThresholdValue && clutchPedalValue > (clutchPedalMinValue + (clutchPedalMaxValue - clutchPedalMinValue)*.1f) 
@@ -3619,11 +3707,11 @@ bool UDynamicVehicleMovementComponent::ApplyClutch(float clutchPedalValue)
 			SetThrottleInput(UKismetMathLibrary::MapRangeClamped(throttleWhenLeavingClutch, gasPedalMinValue, gasPedalMaxValue, 0, 1));
 			UE_LOG(LogTemp, Log, TEXT("Throttle input by clutch : %s"), *FString::SanitizeFloat(throttleWhenLeavingClutch));
 
-			currentClutchPedalValue = clutchPedalValue;
+			currentInputs.currentClutchPedalValue = clutchPedalValue;
 
 		}
 		else
-			currentClutchPedalValue = clutchPedalValue;
+			currentInputs.currentClutchPedalValue = clutchPedalValue;
 
 
 		return true;
@@ -3632,8 +3720,26 @@ bool UDynamicVehicleMovementComponent::ApplyClutch(float clutchPedalValue)
 
 bool UDynamicVehicleMovementComponent::ChangeHandBrakeState(bool handBreakActive)
 {
-	currentHandbreakValue = handBreakActive;
+	currentInputs.currentHandbreakValue = handBreakActive;
 	SetHandbrakeInput(handBreakActive);
+
+	if (vehicleLights.useVehicleLights)
+	{
+		if (IsValid(vehicleLights.brakeLightLeft) && IsValid(vehicleLights.brakeLightRight))
+		{
+			if (handBreakActive)
+			{
+				vehicleLights.brakeLightLeft->SetVisibility(true);
+				vehicleLights.brakeLightRight->SetVisibility(true);
+			}
+			else if (handBreakActive != true && currentInputs.currentBreakPedalValue <= breakPedalMinValue && currentInputs.currentBreakAssistValue != true)
+			{
+				vehicleLights.brakeLightLeft->SetVisibility(false);
+				vehicleLights.brakeLightRight->SetVisibility(false);
+			}
+		}
+	}
+
 	return true;
 }
 
@@ -3713,9 +3819,17 @@ bool UDynamicVehicleMovementComponent::SetEngineStarterValue(bool starterValue)
 	{
 		if (GetCurrentActiveGear() != 0)
 		{
-			if (currentClutchPedalValue >= clutchThresholdValue)
+			if (currentInputs.currentClutchPedalValue >= clutchThresholdValue)
 			{
 				currentEngineStartedValue = true;
+				canEngineJumpStart = false;
+			}
+			else if (canEngineJumpStart)
+			{
+				//temporary jumpstart condition
+				currentEngineStartedValue =  true;
+				canEngineJumpStart = false;
+				UE_LOG(LogTemp, Log, TEXT("Starter allowed jump start"));
 			}
 			else
 			{
@@ -3726,6 +3840,8 @@ bool UDynamicVehicleMovementComponent::SetEngineStarterValue(bool starterValue)
 		else
 		{
 			currentEngineStartedValue = true;
+			canEngineJumpStart = false;
+
 		}
 	}
 	else
@@ -3741,7 +3857,7 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	float currentVehicleSpeed = GetVehicleSpeedInKM_PerHour();
 	
-	//set Accelerate/Decelerate Bool. Default is acceleration
+	//set Accelerate/Decelerate Bool. Default is decceleration
 	if (previousVehicleSpeed - currentVehicleSpeed >= 1)
 	{
 		isVehicleAccelerating = false;
@@ -3776,8 +3892,7 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 		}
 
 		//SHOULD ONLY BE IN APPLYCLUTCH. ADDED HERE TILL WE HAVE HARDWARE INFO
-		
-		if (currentClutchPedalValue < clutchThresholdValue && currentClutchPedalValue > (clutchPedalMinValue + (clutchPedalMaxValue-clutchPedalMinValue)*0.1f) 
+		/*if (currentClutchPedalValue < clutchThresholdValue && currentClutchPedalValue > (clutchPedalMinValue + (clutchPedalMaxValue-clutchPedalMinValue)*0.1f) 
 				&& currentEngineState == EEngineState::EngineEngaged && GetNetFuelIntake() < (gasPedalMinValue + (gasPedalMaxValue-gasPedalMinValue)*0.05f))
 		{
 			float throttleWhenLeavingClutch = ((clutchPedalMaxValue - currentClutchPedalValue) * .5);
@@ -3787,7 +3902,7 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 			}
 			SetThrottleInput(UKismetMathLibrary::MapRangeClamped(throttleWhenLeavingClutch, gasPedalMinValue, gasPedalMaxValue, 0, 1));
 			UE_LOG(LogTemp, Log, TEXT("Throttle input by clutch : %s"), *FString::SanitizeFloat(throttleWhenLeavingClutch));
-		}
+		}*/
 		//END
 
 		float currentEngineRPM = GetEngineRotationSpeed();
@@ -3800,10 +3915,27 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 	}
 	if (vehicleFunctionalities.vehicleHasManualFuelHandle && currentEngineState != EEngineState::EngineOff)
 	{
-		derivedPtrForSimulationClass->dataImpactingSimulation.FillData(GetNetFuelIntake(), GetVehicleSpeedInKM_PerHour(), currentGasPedalValue > gasPedalMinValue, currentBreakAssistValue);
+		derivedPtrForSimulationClass->dataImpactingSimulation.FillData(GetNetFuelIntake(), GetVehicleSpeedInKM_PerHour(), currentInputs.currentGasPedalValue > gasPedalMinValue, currentInputs.currentBreakAssistValue);
 	}
-}
 
+	if (currentEngineStartedValue == false && (currentEngineState == EEngineState::EngineGearChangeable || currentEngineState == EEngineState::EngineDisengaged))
+	{
+		float engineJumpstartRPM = derivedPtrForSimulationClass->GetRelativeEngineRPM_FromSpeed(currentVehicleSpeed);
+		if (engineJumpstartRPM > EngineSetup.EngineIdleRPM)
+		{
+			canEngineJumpStart = true;
+			//UE_LOG(LogTemp, Log, TEXT("Can be jumpstarted"));
+			//engine JumpStart
+		}
+		else
+		{
+			canEngineJumpStart = false;
+		}
+
+	}
+	//else
+	//	canEngineJumpStart = false;
+}
 
 void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
 {
@@ -3850,6 +3982,18 @@ void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
 		if (currentEngineStartedValue == false)
 		{
 			valueToSet = EEngineState::EngineOff;
+
+			if (currentInputs.currentClutchPedalValue >= clutchThresholdValue)
+			{
+				if (currentInputs.currentClutchPedalValue >= clutchDisengagementValue)
+				{
+					valueToSet = EEngineState::EngineDisengaged;
+				}
+				else
+				{
+					valueToSet = EEngineState::EngineGearChangeable;
+				}
+			}
 			//Engine off. No other processing needed.
 		}
 		else
@@ -3858,12 +4002,12 @@ void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
 			//The following processing may look repetetive but it is done in such a way to allow future processing to be added in any case.
 			if (currentEngineState == EEngineState::EngineOff)
 			{
-				if ((GetNetFuelIntake() >= fuelValueToSustainIdleRPM) || (GetNetFuelIntake() < fuelValueToSustainIdleRPM && currentClutchPedalValue> (clutchPedalMaxValue - clutchPedalMinValue)*0.1f ))
+				if ((GetNetFuelIntake() >= fuelValueToSustainIdleRPM) || (GetNetFuelIntake() < fuelValueToSustainIdleRPM && currentInputs.currentClutchPedalValue> (clutchPedalMaxValue - clutchPedalMinValue)*0.1f ))
 				{
 					valueToSet = EEngineState::EngineIdle;
-					if (currentClutchPedalValue >= clutchThresholdValue)
+					if (currentInputs.currentClutchPedalValue >= clutchThresholdValue)
 					{
-						if (currentClutchPedalValue >= clutchDisengagementValue)
+						if (currentInputs.currentClutchPedalValue >= clutchDisengagementValue)
 						{
 							valueToSet = EEngineState::EngineDisengaged;
 						}
@@ -3880,11 +4024,11 @@ void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
 			}
 			if (currentEngineState == EEngineState::EngineIdle)
 			{
-				if ((GetNetFuelIntake() >= fuelValueToSustainIdleRPM) || (GetNetFuelIntake() < fuelValueToSustainIdleRPM && currentClutchPedalValue> (clutchPedalMaxValue - clutchPedalMinValue)*0.1f ))
+				if ((GetNetFuelIntake() >= fuelValueToSustainIdleRPM) || (GetNetFuelIntake() < fuelValueToSustainIdleRPM && currentInputs.currentClutchPedalValue> (clutchPedalMaxValue - clutchPedalMinValue)*0.1f ))
 				{
-					if (currentClutchPedalValue >= clutchThresholdValue)
+					if (currentInputs.currentClutchPedalValue >= clutchThresholdValue)
 					{
-						if (currentClutchPedalValue >= clutchDisengagementValue)
+						if (currentInputs.currentClutchPedalValue >= clutchDisengagementValue)
 						{
 							valueToSet = EEngineState::EngineDisengaged;
 						}
@@ -3893,7 +4037,7 @@ void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
 							valueToSet = EEngineState::EngineGearChangeable;
 						}
 					}
-					else if (currentClutchPedalValue < clutchThresholdValue)
+					else if (currentInputs.currentClutchPedalValue < clutchThresholdValue)
 					{
 						if (GetCurrentActiveGear() != 0)
 						{
@@ -3912,11 +4056,11 @@ void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
 			}
 			if (currentEngineState == EEngineState::EngineEngaged)
 			{
-				if ((GetNetFuelIntake() >= fuelValueToSustainIdleRPM) || (GetNetFuelIntake() < fuelValueToSustainIdleRPM && currentClutchPedalValue> (clutchPedalMaxValue - clutchPedalMinValue)*0.1f ))
+				if ((GetNetFuelIntake() >= fuelValueToSustainIdleRPM) || (GetNetFuelIntake() < fuelValueToSustainIdleRPM && currentInputs.currentClutchPedalValue> (clutchPedalMaxValue - clutchPedalMinValue)*0.1f ))
 				{
-					if (currentClutchPedalValue >= clutchThresholdValue)
+					if (currentInputs.currentClutchPedalValue >= clutchThresholdValue)
 					{
-						if (currentClutchPedalValue >= clutchDisengagementValue)
+						if (currentInputs.currentClutchPedalValue >= clutchDisengagementValue)
 						{
 							valueToSet = EEngineState::EngineDisengaged;
 						}
@@ -3925,7 +4069,7 @@ void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
 							valueToSet = EEngineState::EngineGearChangeable;
 						}
 					}
-					else if (currentClutchPedalValue < clutchThresholdValue)
+					else if (currentInputs.currentClutchPedalValue < clutchThresholdValue)
 					{
 						if (GetCurrentActiveGear() == 0)
 						{
@@ -3948,7 +4092,7 @@ void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
 								}
 
 								if ((minimumSpeed - currentSpeed) > 1 && isVehicleAccelerating == false && (currentEngineRPM <= previousEngineRPM)
-									&& currentClutchPedalValue < (clutchPedalMinValue + (clutchPedalMaxValue - clutchPedalMinValue) * 0.1f))
+									&& currentInputs.currentClutchPedalValue < (clutchPedalMinValue + (clutchPedalMaxValue - clutchPedalMinValue) * 0.1f))
 								{
 									valueToSet = EEngineState::EngineOff;
 								}
@@ -3986,11 +4130,11 @@ void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
 			}
 			if (currentEngineState == EEngineState::EngineGearChangeable)
 			{
-				if ((GetNetFuelIntake() >= fuelValueToSustainIdleRPM) || (GetNetFuelIntake() < fuelValueToSustainIdleRPM && currentClutchPedalValue> (clutchPedalMaxValue - clutchPedalMinValue)*0.1f ))
+				if ((GetNetFuelIntake() >= fuelValueToSustainIdleRPM) || (GetNetFuelIntake() < fuelValueToSustainIdleRPM && currentInputs.currentClutchPedalValue> (clutchPedalMaxValue - clutchPedalMinValue)*0.1f ))
 				{
-					if (currentClutchPedalValue >= clutchThresholdValue)
+					if (currentInputs.currentClutchPedalValue >= clutchThresholdValue)
 					{
-						if (currentClutchPedalValue >= clutchDisengagementValue)
+						if (currentInputs.currentClutchPedalValue >= clutchDisengagementValue)
 						{
 							valueToSet = EEngineState::EngineDisengaged;
 						}
@@ -3999,7 +4143,7 @@ void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
 							valueToSet = EEngineState::EngineGearChangeable;
 						}
 					}
-					else if (currentClutchPedalValue < clutchThresholdValue)
+					else if (currentInputs.currentClutchPedalValue < clutchThresholdValue)
 					{
 						if (GetCurrentActiveGear() == 0)
 						{
@@ -4018,11 +4162,11 @@ void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
 			}
 			if (currentEngineState == EEngineState::EngineDisengaged)
 			{
-				if ((GetNetFuelIntake() >= fuelValueToSustainIdleRPM) || (GetNetFuelIntake() < fuelValueToSustainIdleRPM && currentClutchPedalValue> (clutchPedalMaxValue - clutchPedalMinValue)*0.1f ))
+				if ((GetNetFuelIntake() >= fuelValueToSustainIdleRPM) || (GetNetFuelIntake() < fuelValueToSustainIdleRPM && currentInputs.currentClutchPedalValue> (clutchPedalMaxValue - clutchPedalMinValue)*0.1f ))
 				{
-					if (currentClutchPedalValue >= clutchThresholdValue)
+					if (currentInputs.currentClutchPedalValue >= clutchThresholdValue)
 					{
-						if (currentClutchPedalValue >= clutchDisengagementValue)
+						if (currentInputs.currentClutchPedalValue >= clutchDisengagementValue)
 						{
 							valueToSet = EEngineState::EngineDisengaged;
 						}
@@ -4031,7 +4175,7 @@ void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
 							valueToSet = EEngineState::EngineGearChangeable;
 						}
 					}
-					else if (currentClutchPedalValue < clutchThresholdValue)
+					else if (currentInputs.currentClutchPedalValue < clutchThresholdValue)
 					{
 						if (GetCurrentActiveGear() == 0)
 						{
@@ -4085,12 +4229,12 @@ bool UDynamicVehicleMovementComponent::ToggleBreakAssist(bool enableBreakAssist)
 	{
 		if (currentEngineState == EEngineState::EngineOff)
 		{
-			currentBreakAssistValue = false;
+			currentInputs.currentBreakAssistValue = false;
 			return false;
 		}
 		else
 		{
-			currentBreakAssistValue = enableBreakAssist;
+			currentInputs.currentBreakAssistValue = enableBreakAssist;
 			return true;
 		}
 	}
@@ -4104,15 +4248,15 @@ bool UDynamicVehicleMovementComponent::AdjustFuelHandle(float fuelValue)
 {
 	if (vehicleFunctionalities.vehicleHasManualFuelHandle)
 	{
-		if (currentFuelHandleValue < fuelValueToSustainIdleRPM && fuelValue >= fuelValueToSustainIdleRPM)
+		if (currentInputs.currentFuelHandleValue < fuelValueToSustainIdleRPM && fuelValue >= fuelValueToSustainIdleRPM)
 		{
 			UpdateVehicleEngineState();
 		}
-		else if (currentFuelHandleValue >= fuelValueToSustainIdleRPM && fuelValue < fuelValueToSustainIdleRPM)
+		else if (currentInputs.currentFuelHandleValue >= fuelValueToSustainIdleRPM && fuelValue < fuelValueToSustainIdleRPM)
 		{
 			UpdateVehicleEngineState();
 		}
-		currentFuelHandleValue = fuelValue;
+		currentInputs.currentFuelHandleValue = fuelValue;
 
 		return true;
 	}
