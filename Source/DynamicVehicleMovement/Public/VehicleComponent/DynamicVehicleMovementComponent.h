@@ -1122,11 +1122,11 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleLights
 	// Reference to LightComponent using Component Name. 
  	//On Instances, component picker will allow you to pick components from heirarchy 
  	FLightComponentReference turnLightLeft ;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Turn Light Right", EditCondition = "useVehicleLights", UseComponentPicker))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Turn Light Left Rear", EditCondition = "useVehicleLights", UseComponentPicker))
 	// Reference to LightComponent using Component Name. 
  	//On Instances, component picker will allow you to pick components from heirarchy 
  	FLightComponentReference turnLightLeftRear ;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Turn Light Left Rear", EditCondition = "useVehicleLights", UseComponentPicker))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Turn Light Right", EditCondition = "useVehicleLights", UseComponentPicker))
 	// Reference to LightComponent using Component Name. 
  	//On Instances, component picker will allow you to pick components from heirarchy 
  	FLightComponentReference turnLightRight ;
@@ -1571,6 +1571,11 @@ public:
 	//Returns whether any form of break is active?
 	bool IsBreakActiveInAnyForm(bool overrideValue = false) const;
 
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Lights")
+	//Toggle Lights like headlights, rear lights. Boolean value fogLights determines whether we toggle normal lights or fog lights
+	//Does not influence break and turn lights
+	void ToggleLights(bool enable, bool fogLights);
+
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Differential System") 
 	//Set New Active Differential System. True to activate system 1, false for system 2. Truck needs to be in neutral and rest. Will return true if system changed. You can use failure reason for deubg.
 	bool SetActiveSystemForDifferential(bool UseSystem1, FString& failureReason);
@@ -1663,7 +1668,7 @@ protected:
 	virtual void FixupSkeletalMesh();
 
 	/** Create and setup the Chaos vehicle */
-	virtual void CreateVehicle();
+	virtual void CreateVehicle() override;
 
 	/** Instantiate and setup our wheel objects */
 	virtual void CreateWheels();

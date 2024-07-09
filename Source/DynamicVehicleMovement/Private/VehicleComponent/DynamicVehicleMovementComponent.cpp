@@ -48,44 +48,8 @@ DECLARE_CYCLE_STAT(TEXT("Vehicle:TickVehicle"), STAT_ChaosVehicle_TickVehicle, S
 DECLARE_CYCLE_STAT(TEXT("Vehicle:UpdateSimulation"), STAT_ChaosVehicle_UpdateSimulation, STATGROUP_ChaosVehicle);
 
 
-FDynamicWheeledVehicleDebugParams GWheeledVehicleDebugParams;
-FVehicleDebugParams GVehicleDebugParams;
-
-
-FAutoConsoleVariableRef CVarChaosVehiclesShowWheelCollisionNormal(TEXT("p.Vehicle.ShowWheelCollisionNormal"), GWheeledVehicleDebugParams.ShowWheelCollisionNormal, TEXT("Enable/Disable Wheel Collision Normal Visualisation."));
-FAutoConsoleVariableRef CVarChaosVehiclesShowSuspensionRaycasts(TEXT("p.Vehicle.ShowSuspensionRaycasts"), GWheeledVehicleDebugParams.ShowSuspensionRaycasts, TEXT("Enable/Disable Suspension Raycast Visualisation."));
-FAutoConsoleVariableRef CVarChaosVehiclesShowSuspensionLimits(TEXT("p.Vehicle.ShowSuspensionLimits"), GWheeledVehicleDebugParams.ShowSuspensionLimits, TEXT("Enable/Disable Suspension Limits Visualisation."));
-FAutoConsoleVariableRef CVarChaosVehiclesShowWheelForces(TEXT("p.Vehicle.ShowWheelForces"), GWheeledVehicleDebugParams.ShowWheelForces, TEXT("Enable/Disable Wheel Forces Visualisation."));
-FAutoConsoleVariableRef CVarChaosVehiclesShowSuspensionForces(TEXT("p.Vehicle.ShowSuspensionForces"), GWheeledVehicleDebugParams.ShowSuspensionForces, TEXT("Enable/Disable Suspension Forces Visualisation."));
-FAutoConsoleVariableRef CVarChaosVehiclesShowBatchQueryExtents(TEXT("p.Vehicle.ShowBatchQueryExtents"), GWheeledVehicleDebugParams.ShowBatchQueryExtents, TEXT("Enable/Disable Suspension Forces Visualisation."));
-FAutoConsoleVariableRef CVarChaosVehiclesShowRaycastComponent(TEXT("p.Vehicle.ShowRaycastComponent"), GWheeledVehicleDebugParams.ShowRaycastComponent, TEXT("Enable/Disable Raycast Component Hit Visualisation."));
-FAutoConsoleVariableRef CVarChaosVehiclesShowRaycastMaterial(TEXT("p.Vehicle.ShowRaycastMaterial"), GWheeledVehicleDebugParams.ShowRaycastMaterial, TEXT("Enable/Disable Raycast Material Hit Visualisation."));
-FAutoConsoleVariableRef CVarChaosVehiclesTraceTypeOverride(TEXT("p.Vehicle.TraceTypeOverride"), GWheeledVehicleDebugParams.TraceTypeOverride, TEXT("Override ray trace type, 1=Simple, 2=Complex."));
-
-FAutoConsoleVariableRef CVarChaosVehiclesDisableSuspensionForces(TEXT("p.Vehicle.DisableSuspensionForces"), GWheeledVehicleDebugParams.DisableSuspensionForces, TEXT("Enable/Disable Suspension Forces."));
-FAutoConsoleVariableRef CVarChaosVehiclesDisableFrictionForces(TEXT("p.Vehicle.DisableFrictionForces"), GWheeledVehicleDebugParams.DisableFrictionForces, TEXT("Enable/Disable Wheel Friction Forces."));
-FAutoConsoleVariableRef CVarChaosVehiclesDisableRollbarForces(TEXT("p.Vehicle.DisableRollbarForces"), GWheeledVehicleDebugParams.DisableRollbarForces, TEXT("Enable/Disable Rollbar Forces."));
-FAutoConsoleVariableRef CVarChaosVehiclesDisableConstraintSuspension(TEXT("p.Vehicle.DisableConstraintSuspension"), GWheeledVehicleDebugParams.DisableConstraintSuspension, TEXT("Enable/Disable Constraint based suspension, swaps to basic force based suspension without hardstops instead."));
-
-FAutoConsoleVariableRef CVarChaosVehiclesThrottleOverride(TEXT("p.Vehicle.ThrottleOverride"), GWheeledVehicleDebugParams.ThrottleOverride, TEXT("Hard code throttle input on."));
-FAutoConsoleVariableRef CVarChaosVehiclesSteeringOverride(TEXT("p.Vehicle.SteeringOverride"), GWheeledVehicleDebugParams.SteeringOverride, TEXT("Hard code steering input on."));
-
-FAutoConsoleVariableRef CVarChaosVehiclesResetMeasurements(TEXT("p.Vehicle.ResetMeasurements"), GWheeledVehicleDebugParams.ResetPerformanceMeasurements, TEXT("Reset Vehicle Performance Measurements."));
-
-FAutoConsoleVariableRef CVarChaosVehiclesOverlapTestExpansionXY(TEXT("p.Vehicle.OverlapTestExpansionXY"), GWheeledVehicleDebugParams.OverlapTestExpansionXY, TEXT("Raycast Overlap Test Expansion of Bounding Box in X/Y axes."));
-FAutoConsoleVariableRef CVarChaosVehiclesOverlapTestExpansionXZ(TEXT("p.Vehicle.OverlapTestExpansionZ"), GWheeledVehicleDebugParams.OverlapTestExpansionZ, TEXT("Raycast Overlap Test Expansion of Bounding Box in Z axis"));
-
-//FAutoConsoleVariableRef CVarChaosVehiclesDisableSuspensionConstraints(TEXT("p.Vehicle.DisableSuspensionConstraint"), GWheeledVehicleDebugParams.DisableSuspensionConstraint, TEXT("Enable/Disable Suspension Constraints."));
-
-FAutoConsoleCommand CVarCommandVehiclesNextDebugPage(
-	TEXT("p.Vehicle.NextDebugPage"),
-	TEXT("Display the next page of vehicle debug data."),
-	FConsoleCommandDelegate::CreateStatic(UDynamicVehicleMovementComponent::NextDebugPage));
-
-FAutoConsoleCommand CVarCommandVehiclesPrevDebugPage(
-	TEXT("p.Vehicle.PrevDebugPage"),
-	TEXT("Display the previous page of vehicle debug data."),
-	FConsoleCommandDelegate::CreateStatic(UDynamicVehicleMovementComponent::PrevDebugPage));
+FDynamicWheeledVehicleDebugParams DynWheeledVehicleDebugParams;
+FVehicleDebugParams DynVehicleDebugParams;
 
 
 FString FDynamicWheelStatus::ToString() const
@@ -232,7 +196,7 @@ void UDynamicVehicleSimulation::UpdateState(float DeltaTime, const FChaosVehicle
 			PSuspension.UpdateWorldRaycastLocation(VehicleState.VehicleWorldTransform, PWheel.GetEffectiveRadius(), WheelState.Trace[WheelIdx]);
 		}
 
-		if (!GWheeledVehicleDebugParams.DisableSuspensionForces && PVehicle->bSuspensionEnabled)
+		if (!DynWheeledVehicleDebugParams.DisableSuspensionForces && PVehicle->bSuspensionEnabled)
 		{
 			PerformSuspensionTraces(WheelState.Trace, InputData.PhysicsInputs.TraceParams, InputData.PhysicsInputs.TraceCollisionResponse, InputData.PhysicsInputs.WheelTraceParams);
 		}
@@ -269,7 +233,7 @@ void UDynamicVehicleSimulation::UpdateSimulation(float DeltaTime, const FChaosVe
 	{
 		///////////////////////////////////////////////////////////////////////
 		// Engine/Transmission
-		if (!GWheeledVehicleDebugParams.DisableSuspensionForces && PVehicle->bMechanicalSimEnabled)
+		if (!DynWheeledVehicleDebugParams.DisableSuspensionForces && PVehicle->bMechanicalSimEnabled)
 		{
 			ProcessMechanicalSimulation(DeltaTime);
 		}
@@ -277,7 +241,7 @@ void UDynamicVehicleSimulation::UpdateSimulation(float DeltaTime, const FChaosVe
 		///////////////////////////////////////////////////////////////////////
 		// Suspension
 
-		if (!GWheeledVehicleDebugParams.DisableSuspensionForces && PVehicle->bSuspensionEnabled)
+		if (!DynWheeledVehicleDebugParams.DisableSuspensionForces && PVehicle->bSuspensionEnabled)
 		{
 			ApplySuspensionForces(DeltaTime, InputData.PhysicsInputs.WheelTraceParams);
 		}
@@ -290,7 +254,7 @@ void UDynamicVehicleSimulation::UpdateSimulation(float DeltaTime, const FChaosVe
 		///////////////////////////////////////////////////////////////////////
 		// Wheel Friction
 
-		if (!GWheeledVehicleDebugParams.DisableFrictionForces && PVehicle->bWheelFrictionEnabled)
+		if (!DynWheeledVehicleDebugParams.DisableFrictionForces && PVehicle->bWheelFrictionEnabled)
 		{
 			ApplyWheelFrictionForces(DeltaTime);
 		}
@@ -328,9 +292,9 @@ void UDynamicVehicleSimulation::PerformSuspensionTraces(const TArray<Chaos::FSus
 	ResponseParams.CollisionResponse = CollisionResponse;
 
 	// batching is about 0.5ms (25%) faster when there's 100 vehicles on a flat terrain
-	if (GVehicleDebugParams.BatchQueries)
+	if (DynVehicleDebugParams.BatchQueries)
 	{
-		if (!GVehicleDebugParams.CacheTraceOverlap || !ContainsTraces(QueryBox, SuspensionTrace))
+		if (!DynVehicleDebugParams.CacheTraceOverlap || !ContainsTraces(QueryBox, SuspensionTrace))
 		{
 			SCOPE_CYCLE_COUNTER(STAT_ChaosVehicle_SuspensionOverlapTest);
 
@@ -356,7 +320,7 @@ void UDynamicVehicleSimulation::PerformSuspensionTraces(const TArray<Chaos::FSus
 					QueryBox.Max = QueryBox.Max.ComponentMax(TraceEnd);
 				}
 			}
-			QueryBox = QueryBox.ExpandBy(FVector(GWheeledVehicleDebugParams.OverlapTestExpansionXY, GWheeledVehicleDebugParams.OverlapTestExpansionXY, GWheeledVehicleDebugParams.OverlapTestExpansionZ));
+			QueryBox = QueryBox.ExpandBy(FVector(DynWheeledVehicleDebugParams.OverlapTestExpansionXY, DynWheeledVehicleDebugParams.OverlapTestExpansionXY, DynWheeledVehicleDebugParams.OverlapTestExpansionZ));
 			FCollisionShape CollisionBox;
 			CollisionBox.SetBox((FVector3f)QueryBox.GetExtent());
 
@@ -364,7 +328,7 @@ void UDynamicVehicleSimulation::PerformSuspensionTraces(const TArray<Chaos::FSus
 		}
 
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
-		if (GWheeledVehicleDebugParams.ShowBatchQueryExtents)
+		if (DynWheeledVehicleDebugParams.ShowBatchQueryExtents)
 		{
 			Chaos::FDebugDrawQueue::GetInstance().DrawDebugBox(QueryBox.GetCenter(), QueryBox.GetExtent(), FQuat::Identity, FColor::Yellow, false, -1.0f, 0, 2.0f);
 
@@ -392,9 +356,9 @@ void UDynamicVehicleSimulation::PerformSuspensionTraces(const TArray<Chaos::FSus
 				const FVector& TraceEnd = SuspensionTrace[WheelIdx].End;
 				TraceParams.bTraceComplex = (WheelTraceParams[WheelIdx].SweepType == ESweepType::ComplexSweep);
 
-				if (GWheeledVehicleDebugParams.TraceTypeOverride > 0)
+				if (DynWheeledVehicleDebugParams.TraceTypeOverride > 0)
 				{
-					TraceParams.bTraceComplex = GWheeledVehicleDebugParams.TraceTypeOverride == 2;
+					TraceParams.bTraceComplex = DynWheeledVehicleDebugParams.TraceTypeOverride == 2;
 				}
 
 				FVector TraceVector(TraceStart - TraceEnd); // reversed
@@ -458,9 +422,9 @@ void UDynamicVehicleSimulation::PerformSuspensionTraces(const TArray<Chaos::FSus
 			FVector TraceEnd = SuspensionTrace[WheelIdx].End;
 			TraceParams.bTraceComplex = (WheelTraceParams[WheelIdx].SweepType == ESweepType::ComplexSweep);
 
-			if (GWheeledVehicleDebugParams.TraceTypeOverride > 0)
+			if (DynWheeledVehicleDebugParams.TraceTypeOverride > 0)
 			{
-				TraceParams.bTraceComplex = GWheeledVehicleDebugParams.TraceTypeOverride == 2;
+				TraceParams.bTraceComplex = DynWheeledVehicleDebugParams.TraceTypeOverride == 2;
 			}
 
 			FVector TraceVector(TraceStart - TraceEnd); // reversed
@@ -542,7 +506,7 @@ void UDynamicVehicleSimulation::ApplyWheelFrictionForces(float DeltaTime)
 			}
 
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
-			if (GWheeledVehicleDebugParams.ShowWheelForces)
+			if (DynWheeledVehicleDebugParams.ShowWheelForces)
 			{
 				// show longitudinal drive force
 				if (PWheel.AvailableGrip > 0.0f)
@@ -595,7 +559,7 @@ void UDynamicVehicleSimulation::ApplySuspensionForces(float DeltaTime, TArray<FW
 		auto& PSuspension = PVehicle->Suspension[WheelIdx];
 		float SuspensionMovePosition = -PSuspension.Setup().MaxLength;
 
-		if (!GWheeledVehicleDebugParams.DisableConstraintSuspension)
+		if (!DynWheeledVehicleDebugParams.DisableConstraintSuspension)
 		{
 			if (WheelIdx < ConstraintHandles.Num())
 			{
@@ -643,7 +607,7 @@ void UDynamicVehicleSimulation::ApplySuspensionForces(float DeltaTime, TArray<FW
 			FVector SusApplicationPoint = WheelState.WheelWorldLocation[WheelIdx] + PVehicle->Suspension[WheelIdx].Setup().SuspensionForceOffset;
 
 			check(PWheel.InContact());
-			if (GWheeledVehicleDebugParams.DisableConstraintSuspension)
+			if (DynWheeledVehicleDebugParams.DisableConstraintSuspension)
 			{
 				AddForceAtPosition(SuspensionForceVector, SusApplicationPoint);
 			}
@@ -654,11 +618,11 @@ void UDynamicVehicleSimulation::ApplySuspensionForces(float DeltaTime, TArray<FW
 			SusForces[WheelIdx] = ForceMagnitude;
 
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
-			if (GWheeledVehicleDebugParams.ShowSuspensionForces)
+			if (DynWheeledVehicleDebugParams.ShowSuspensionForces)
 			{
 				Chaos::FDebugDrawQueue::GetInstance().DrawDebugLine(
 					SusApplicationPoint
-					, SusApplicationPoint + SuspensionForceVector * GVehicleDebugParams.ForceDebugScaling
+					, SusApplicationPoint + SuspensionForceVector * DynVehicleDebugParams.ForceDebugScaling
 					, FColor::Blue, false, -1.0f, 0, 5);
 
 				Chaos::FDebugDrawQueue::GetInstance().DrawDebugLine(
@@ -678,7 +642,7 @@ void UDynamicVehicleSimulation::ApplySuspensionForces(float DeltaTime, TArray<FW
 
 	}
 
-	if (!GWheeledVehicleDebugParams.DisableRollbarForces)
+	if (!DynWheeledVehicleDebugParams.DisableRollbarForces)
 	{
 		for (auto& Axle : PVehicle->GetAxles())
 		{
@@ -726,9 +690,9 @@ void UDynamicVehicleSimulation::ProcessSteering(const FControlInputs& ControlInp
 
 			float SteeringAngle = ControlInputs.SteeringInput * SpeedScale;
 
-			if (FMath::Abs(GWheeledVehicleDebugParams.SteeringOverride) > 0.01f)
+			if (FMath::Abs(DynWheeledVehicleDebugParams.SteeringOverride) > 0.01f)
 			{
-				SteeringAngle = PWheel.MaxSteeringAngle * GWheeledVehicleDebugParams.SteeringOverride;
+				SteeringAngle = PWheel.MaxSteeringAngle * DynWheeledVehicleDebugParams.SteeringOverride;
 			}
 			else
 			{
@@ -776,11 +740,11 @@ void UDynamicVehicleSimulation::ApplyInput(const FControlInputs& ControlInputs, 
 			ModifiedInputs.GearDownInput = false;
 		}
 
-		if (GWheeledVehicleDebugParams.ThrottleOverride > 0.f)
+		if (DynWheeledVehicleDebugParams.ThrottleOverride > 0.f)
 		{
 			PTransmission.SetGear(1, true);
 			ModifiedInputs.BrakeInput = 0.f;
-			PEngine.SetThrottle(GWheeledVehicleDebugParams.ThrottleOverride);
+			PEngine.SetThrottle(DynWheeledVehicleDebugParams.ThrottleOverride);
 		}
 		else
 		{
@@ -1043,7 +1007,7 @@ void UDynamicVehicleSimulation::DrawDebug3D()
 
 	const FTransform BodyTransform = VehicleState.VehicleWorldTransform;
 
-	if (GWheeledVehicleDebugParams.ShowSuspensionLimits)
+	if (DynWheeledVehicleDebugParams.ShowSuspensionLimits)
 	{
 		for (int WheelIdx = 0; WheelIdx < PVehicle->Suspension.Num(); WheelIdx++)
 		{
@@ -1074,7 +1038,7 @@ void UDynamicVehicleSimulation::DrawDebug3D()
 		}
 	}
 
-	if (GWheeledVehicleDebugParams.ShowRaycastComponent)
+	if (DynWheeledVehicleDebugParams.ShowRaycastComponent)
 	{
 		for (int WheelIdx = 0; WheelIdx < PVehicle->Suspension.Num(); WheelIdx++)
 		{
@@ -1096,7 +1060,7 @@ void UDynamicVehicleSimulation::DrawDebug3D()
 		}
 	}
 
-	if (GWheeledVehicleDebugParams.ShowRaycastMaterial)
+	if (DynWheeledVehicleDebugParams.ShowRaycastMaterial)
 	{
 		for (int WheelIdx = 0; WheelIdx < PVehicle->Suspension.Num(); WheelIdx++)
 		{
@@ -1119,7 +1083,7 @@ void UDynamicVehicleSimulation::DrawDebug3D()
 
 	}
 
-	if (GWheeledVehicleDebugParams.ShowWheelCollisionNormal)
+	if (DynWheeledVehicleDebugParams.ShowWheelCollisionNormal)
 	{
 		FString Name;
 		for (int WheelIdx = 0; WheelIdx < PVehicle->Suspension.Num(); WheelIdx++)
@@ -1139,7 +1103,7 @@ void UDynamicVehicleSimulation::DrawDebug3D()
 		}
 	}
 
-	if (GWheeledVehicleDebugParams.ShowSuspensionRaycasts)
+	if (DynWheeledVehicleDebugParams.ShowSuspensionRaycasts)
 	{
 		for (int WheelIdx = 0; WheelIdx < PVehicle->Suspension.Num(); WheelIdx++)
 		{
@@ -1324,7 +1288,7 @@ void UDynamicVehicleMovementComponent::FixupSkeletalMesh()
 
 					}
 
-					if (!GWheeledVehicleDebugParams.DisableConstraintSuspension)
+					if (!DynWheeledVehicleDebugParams.DisableConstraintSuspension)
 					{
 						FBodyInstance* TargetInstance = UpdatedPrimitive->GetBodyInstance();
 						if (TargetInstance)
@@ -1961,9 +1925,9 @@ void UDynamicVehicleMovementComponent::Update(float DeltaTime)
 //
 //	if (DebugPage == EDynamicDebugPages::PerformancePage)
 //	{
-//		if (GWheeledVehicleDebugParams.ResetPerformanceMeasurements)
+//		if (DynWheeledVehicleDebugParams.ResetPerformanceMeasurements)
 //		{
-//			GWheeledVehicleDebugParams.ResetPerformanceMeasurements = false;
+//			DynWheeledVehicleDebugParams.ResetPerformanceMeasurements = false;
 //			PerformanceMeasure.ResetAll();
 //		}
 //
@@ -2699,6 +2663,7 @@ void UDynamicVehicleMovementComponent::SetAffectedBySteering(int WheelIndex, boo
 	}
 }
 
+
 void UDynamicVehicleMovementComponent::SetAffectedByEngine(int WheelIndex, bool Enabled)
 {
 	if (FBodyInstance* TargetInstance = GetBodyInstance())
@@ -3070,6 +3035,7 @@ FDynamicWheelSetup::FDynamicWheelSetup()
 //CUSTOMIZED FUNCTIONS START HERE
 
 #if WITH_EDITOR
+
 void UDynamicVehicleMovementComponent::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
 {
 	const FName PropertyName = PropertyChangedEvent.Property ? PropertyChangedEvent.Property->GetFName() : NAME_None;
@@ -3194,8 +3160,10 @@ bool UDynamicVehicleMovementComponent::CanEditChange(const FProperty* InProperty
 
 UDynamicVehicleMovementComponent::UDynamicVehicleMovementComponent(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
+
 	// default values setup
 	PrimaryComponentTick.bCanEverTick = true;
+
 
 	EngineSetup.InitDefaults();
 	DifferentialSetup.InitDefaults();
@@ -3252,6 +3220,7 @@ UDynamicVehicleMovementComponent::UDynamicVehicleMovementComponent(const FObject
 		{
 			Property->SetMetaData(TEXT("Category"), "Dynamic Vehicle Movement|Vehicle Setup");
 		}
+
 	}
 #endif
 }
@@ -3560,6 +3529,32 @@ FDynamicFunctionalities UDynamicVehicleMovementComponent::GetActiveVehicleFuncti
 FDyamicTransferCaseConfig UDynamicVehicleMovementComponent::GetTransferCaseConfig() const
 {
 	return transferCaseConfig;
+}
+
+void UDynamicVehicleMovementComponent::ToggleLights(bool enable, bool fogLights)
+{
+	if (fogLights)
+	{
+		if(IsValid(vehicleLights.fogLightLeft.fetchedLightComponent))
+			vehicleLights.fogLightLeft.fetchedLightComponent->SetVisibility(enable);
+		if (IsValid(vehicleLights.fogLightLeftRear.fetchedLightComponent))
+			vehicleLights.fogLightLeftRear.fetchedLightComponent->SetVisibility(enable);
+		if (IsValid(vehicleLights.fogLightRight.fetchedLightComponent))
+			vehicleLights.fogLightRight.fetchedLightComponent->SetVisibility(enable);
+		if (IsValid(vehicleLights.fogLightRightRear.fetchedLightComponent))
+		vehicleLights.fogLightRightRear.fetchedLightComponent->SetVisibility(enable);
+	}
+	else
+	{
+		if (IsValid(vehicleLights.headLightLeft.fetchedLightComponent))
+			vehicleLights.headLightLeft.fetchedLightComponent->SetVisibility(enable);
+		if (IsValid(vehicleLights.headLightRight.fetchedLightComponent))
+			vehicleLights.headLightRight.fetchedLightComponent->SetVisibility(enable);
+		if (IsValid(vehicleLights.rearLightLeft.fetchedLightComponent))
+			vehicleLights.rearLightLeft.fetchedLightComponent->SetVisibility(enable);
+		if (IsValid(vehicleLights.rearLightRight.fetchedLightComponent))
+			vehicleLights.rearLightRight.fetchedLightComponent->SetVisibility(enable);
+	}
 }
 
 bool UDynamicVehicleMovementComponent::ApplyGas(float gasPedalValue)
@@ -3931,23 +3926,26 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 	}
 	if (vehicleFunctionalities.vehicleHasManualFuelHandle && currentEngineState != EEngineState::EngineOff)
 	{
-		derivedPtrForSimulationClass->dataImpactingSimulation.FillData(GetNetFuelIntake(), GetVehicleSpeedInKM_PerHour(), currentInputs.currentGasPedalValue > gasPedalMinValue, currentInputs.currentBreakAssistValue);
+		if (derivedPtrForSimulationClass)
+			derivedPtrForSimulationClass->dataImpactingSimulation.FillData(GetNetFuelIntake(), GetVehicleSpeedInKM_PerHour(), currentInputs.currentGasPedalValue > gasPedalMinValue, currentInputs.currentBreakAssistValue);
 	}
 
 	if (currentEngineStartedValue == false && (currentEngineState == EEngineState::EngineGearChangeable || currentEngineState == EEngineState::EngineDisengaged))
 	{
-		float engineJumpstartRPM = derivedPtrForSimulationClass->GetRelativeEngineRPM_FromSpeed(currentVehicleSpeed);
-		if (engineJumpstartRPM > EngineSetup.EngineIdleRPM)
+		if (derivedPtrForSimulationClass)
 		{
-			canEngineJumpStart = true;
-			//UE_LOG(LogTemp, Log, TEXT("Can be jumpstarted"));
-			//engine JumpStart
+			float engineJumpstartRPM = derivedPtrForSimulationClass->GetRelativeEngineRPM_FromSpeed(currentVehicleSpeed);
+			if (engineJumpstartRPM > EngineSetup.EngineIdleRPM)
+			{
+				canEngineJumpStart = true;
+				//UE_LOG(LogTemp, Log, TEXT("Can be jumpstarted"));
+				//engine JumpStart
+			}
+			else
+			{
+				canEngineJumpStart = false;
+			}
 		}
-		else
-		{
-			canEngineJumpStart = false;
-		}
-
 	}
 
 	//else
@@ -4220,9 +4218,11 @@ void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
 			previousVehicleSpeed = 0;
 
 			SetThrottleInput(0);
-
-			derivedPtrForSimulationClass->dataImpactingSimulation.isFilled = false;
-			derivedPtrForSimulationClass->dataImpactingSimulation.isThrottleActive = false;
+			if (derivedPtrForSimulationClass)
+			{
+				derivedPtrForSimulationClass->dataImpactingSimulation.isFilled = false;
+				derivedPtrForSimulationClass->dataImpactingSimulation.isThrottleActive = false;
+			}
 		}
 		if (valueToSet == EEngineState::EngineIdle)
 		{
@@ -4232,8 +4232,11 @@ void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
 			previousVehicleSpeed = 0;
 
 			SetThrottleInput(0);
-			derivedPtrForSimulationClass->dataImpactingSimulation.isFilled = false;
-			derivedPtrForSimulationClass->dataImpactingSimulation.isThrottleActive = false;
+			if (derivedPtrForSimulationClass)
+			{
+				derivedPtrForSimulationClass->dataImpactingSimulation.isFilled = false;
+				derivedPtrForSimulationClass->dataImpactingSimulation.isThrottleActive = false;
+			}
 		}
 
 		currentEngineState = valueToSet;

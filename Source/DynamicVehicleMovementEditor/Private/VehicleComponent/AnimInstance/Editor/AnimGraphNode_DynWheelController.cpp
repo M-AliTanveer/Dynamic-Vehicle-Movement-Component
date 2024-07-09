@@ -4,8 +4,7 @@
 #include "VehicleComponent/AnimInstance/Editor/AnimGraphNode_DynWheelController.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/CompilerResultsLog.h"
-#include "VehicleComponent/AnimInstance/DynamicVehicleAnimationInstance.h"
-
+#include "DynamicVehicleMovement/Public/VehicleComponent/AnimInstance/DynamicVehicleAnimationInstance.h"
 /////////////////////////////////////////////////////
 // UAnimGraphNode_DynWheelController
 

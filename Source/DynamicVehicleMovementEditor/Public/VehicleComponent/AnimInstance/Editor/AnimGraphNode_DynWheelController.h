@@ -13,7 +13,7 @@ class UEdGraph;
  * 
  */
 UCLASS()
-class DYNAMICVEHICLEMOVEMENT_API UAnimGraphNode_DynWheelController : public UAnimGraphNode_SkeletalControlBase
+class UAnimGraphNode_DynWheelController : public UAnimGraphNode_SkeletalControlBase
 {
 	GENERATED_BODY()
 	UPROPERTY(EditAnywhere, Category = Settings)

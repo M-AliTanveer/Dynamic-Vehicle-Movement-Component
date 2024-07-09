@@ -19,7 +19,7 @@ struct FDynamicWheelAnimationData
 
 /** Proxy override for this UAnimInstance-derived class */
 USTRUCT()
-	struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleAnimationInstanceProxy : public FAnimInstanceProxy
+struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleAnimationInstanceProxy : public FAnimInstanceProxy
 {
 	GENERATED_BODY()
 

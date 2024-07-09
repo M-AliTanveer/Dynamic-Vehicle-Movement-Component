@@ -3,7 +3,7 @@
 	"Version": 1,
 	"VersionName": "1.0",
 	"FriendlyName": "DynamicVehicleMovement",
-	"Description": "A Vehicle Movement Component built on top of Chaos with extensive support for Mechanical Vehicles, especially heavy vehciles.",
+	"Description": "A Vehicle Movement Component built on top of Chaos with extensive support for Mechanical Vehicles, especially heavy vehicles.",
 	"Category": "Other",
 	"CreatedBy": "Muhammad Ali Tanveer",
 	"CreatedByURL": "m-alitanveer.github.io",
@@ -18,6 +18,11 @@
 		{
 			"Name": "DynamicVehicleMovement",
 			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "DynamicVehicleMovementEditor",
+			"Type": "UncookedOnly",
 			"LoadingPhase": "Default"
 		}
 	],

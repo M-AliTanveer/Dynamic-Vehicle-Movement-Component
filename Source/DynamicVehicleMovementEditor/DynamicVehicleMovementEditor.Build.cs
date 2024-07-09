@@ -1,9 +1,9 @@
 using System.IO;
 using UnrealBuildTool;
 
-public class DynamicVehicleMovement : ModuleRules
+public class DynamicVehicleMovementEditor : ModuleRules
 {
-    public DynamicVehicleMovement(ReadOnlyTargetRules Target) : base(Target)
+    public DynamicVehicleMovementEditor(ReadOnlyTargetRules Target) : base(Target)
     {
         PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
 
@@ -25,6 +25,8 @@ public class DynamicVehicleMovement : ModuleRules
                 "PhysicsCore", // Add PhysicsCore for physics-related functionalities
                 "Chaos", // Add Chaos for physics and chaos-related functionalities
                 "ChaosVehicles", // Add ChaosVehicles for vehicle-related functionalities
+                "DynamicVehicleMovement",
+
             }
         );
 
@@ -36,6 +38,7 @@ public class DynamicVehicleMovement : ModuleRules
                 "Slate",
                 "SlateCore",
                 "ChaosVehiclesCore", // Add ChaosVehiclesCore as private dependency
+                "DynamicVehicleMovement",
             }
         );
 
