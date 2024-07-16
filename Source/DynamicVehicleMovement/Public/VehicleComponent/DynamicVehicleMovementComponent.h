@@ -1550,6 +1550,14 @@ public:
 	//Returns speed in Kilometers Per hour
 	float GetVehicleSpeedInKM_PerHour() const;
 
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement", BlueprintPure)
+	//Returns Wheel RPMs
+	TArray<float> GetWheelSpeeds() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement", BlueprintPure)
+	//Returns Enigne Torque
+	float GetEngineTorque() const;
+
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Miscellanous", BlueprintPure)
 	//Returns vehicle center of mass. Center of mass affects handling a lot. Use this to debug.
 	FTransform GetCenterOfMass();

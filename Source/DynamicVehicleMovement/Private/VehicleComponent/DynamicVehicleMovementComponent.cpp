@@ -851,7 +851,7 @@ void UDynamicVehicleSimulation::ProcessMechanicalSimulation(float DeltaTime)
 			float engineMaxRPM = dataImpactingSimulation.engineData.MaxRPM;
 			maxAllowableRPM = (dataImpactingSimulation.netFuelIntakeValue / dataImpactingSimulation.netFuelIntakeMaxRange) * engineMaxRPM;
 			targetRPM_BasedOnFuel = maxAllowableRPM;
-			targetRPM = PTransmission.GetEngineRPMFromWheelRPM(WheelRPM);
+			targetRPM = FMath::Abs(PTransmission.GetEngineRPMFromWheelRPM(WheelRPM));
 			//targetRPM = FMath::Min(targetRPM, maxAllowableRPM);
 
 			if (maxAllowableRPM == dataImpactingSimulation.engineData.MaxRPM)
@@ -3452,6 +3452,30 @@ void UDynamicVehicleMovementComponent::ChangeTransmissionSystem(bool useHighGear
 float UDynamicVehicleMovementComponent::GetVehicleSpeedInKM_PerHour() const
 {
 	return UKismetMathLibrary::Abs(Chaos::CmSToKmH(GetForwardSpeed()));
+}
+
+TArray<float> UDynamicVehicleMovementComponent::GetWheelSpeeds() const
+{
+	if (derivedPtrForSimulationClass)
+	{
+		TArray<float> wheelRPMs;
+		for (auto Wheel : derivedPtrForSimulationClass->PVehicle->Wheels)
+		{
+			wheelRPMs.Add(Wheel.GetWheelRPM());
+		}
+		return wheelRPMs;
+	}
+
+	return TArray<float>();
+}
+
+float UDynamicVehicleMovementComponent::GetEngineTorque() const
+{
+	if (derivedPtrForSimulationClass)
+	{
+		return derivedPtrForSimulationClass->PVehicle->GetEngine().GetEngineTorque();
+	}
+	return 0.0f;
 }
 
 EEngineState UDynamicVehicleMovementComponent::GetCurrentEngineState() const
