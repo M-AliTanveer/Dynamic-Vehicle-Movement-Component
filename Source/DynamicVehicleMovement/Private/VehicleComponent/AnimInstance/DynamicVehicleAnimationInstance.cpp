@@ -7,6 +7,7 @@
 
 #include "VehicleComponent/AnimInstance/DynamicVehicleAnimationInstance.h"
 #include "VehicleComponent/DynamicVehicleMovementComponent.h"
+#include "Wheels/DynamicWheel/DynamicWheel.h"
 #include "WheeledVehiclePawn.h"
 #include "AnimationRuntime.h"
 
