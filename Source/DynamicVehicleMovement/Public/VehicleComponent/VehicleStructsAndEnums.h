@@ -330,12 +330,16 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleEngineConfig
 	}
 
 	/** Torque [Normalized 0..1] for a given RPM */
-	UPROPERTY(EditAnywhere, Category = Setup)
+	UPROPERTY(EditAnywhere)
 	FRuntimeFloatCurve TorqueCurve;
 
 	/** Max Engine Torque (Nm) is multiplied by TorqueCurve */
-	UPROPERTY(EditAnywhere, Category = Setup)
+	UPROPERTY(EditAnywhere)
 	float MaxTorque;
+
+	UPROPERTY(EditAnywhere)
+	//Should engine RPM be dependant on fuel input while rising? This means that RPM will only touch Max RPM if gas input is at max. 
+	bool RPM_DependsOnFuelInput = true;
 
 	/** Maximum revolutions per minute of the engine */
 	UPROPERTY(EditAnywhere, Category = Setup, meta = (ClampMin = "0.01", UIMin = "0.01"))
@@ -349,7 +353,7 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleEngineConfig
 	UPROPERTY(EditAnywhere, Category = Setup)
 	float EngineBrakeEffect;
 
-	/** Affects how fast the engine RPM speed up */
+	/** Affects how fast the engine RPM speed up*/
 	UPROPERTY(EditAnywhere, Category = Setup, meta = (ClampMin = "0.01", UIMin = "0.01"))
 	float EngineRevUpMOI;
 
@@ -497,60 +501,61 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleTransmissionConfig
 	friend class UDynamicleWheel;
 
 	/** Whether to use automatic transmission */
-	UPROPERTY(/*EditAnywhere, Category = VehicleSetup, meta = (DisplayName = "Automatic Transmission")*/)
+	UPROPERTY()
 	bool bUseAutomaticGears;
 
-	UPROPERTY(/*EditAnywhere, Category = VehicleSetup, meta = (DisplayName = "Automatic Reverse")*/)
+	UPROPERTY()
 	bool bUseAutoReverse;
 
 	UPROPERTY()
 	bool bUseHighLowRatios = true;
-
-	/** The final gear ratio multiplies the transmission gear ratios.*/
-	UPROPERTY(EditAnywhere, AdvancedDisplay/*, Category = Setup*/)
+	
+	UPROPERTY(EditAnywhere)
+	//The final ratio is multiplied by all gear ratios before the ratio is fed into the sytstem. Useful for changing affect of all gears together. 
 	float FinalRatio;
 
-	/** Forward gear ratios */
-	UPROPERTY(EditAnywhere/*, Category = Setup*/, AdvancedDisplay, meta = (EditCondition = "bUseAutomaticGears!=true&&bUseHighLowRatios", EditConditionHides))
+	UPROPERTY(EditAnywhere, meta = (EditCondition = "bUseAutomaticGears!=true&&bUseHighLowRatios", EditConditionHides))
+	//Forward gear ratios if vehicle has changeable transmission system
 	TArray<FHighLowGearCombo> ForwardGearRatios;
 
-	/** Reverse gear ratio(s) */
-	UPROPERTY(EditAnywhere, AdvancedDisplay/*, Category = Setup*/, meta = (EditCondition = "bUseAutomaticGears!=true&&bUseHighLowRatios", EditConditionHides))
+	UPROPERTY(EditAnywhere, meta = (EditCondition = "bUseAutomaticGears!=true&&bUseHighLowRatios", EditConditionHides))
+	//Reverse gear ratios if vehicle has changeable transmission system
 	TArray<FHighLowGearCombo> ReverseGearRatios;
 
-	/** Forward gear ratios */
-	UPROPERTY(EditAnywhere/*, Category = Setup*/, AdvancedDisplay, meta = (EditCondition = "bUseAutomaticGears!=true&&!bUseHighLowRatios", EditConditionHides, DisplayName = "Forward Gear Ratios"))
+	UPROPERTY(EditAnywhere, meta = (EditCondition = "bUseAutomaticGears!=true&&!bUseHighLowRatios", EditConditionHides, DisplayName = "Forward Gear Ratios"))
+	//Forward gear ratios if vehicle does NOT have a changeable transmission system
 	TArray<FSingularGearCombo> ForwardGearRatiosSingular;
 
-	/** Reverse gear ratio(s) */
-	UPROPERTY(EditAnywhere, AdvancedDisplay/*, Category = Setup*/, meta = (EditCondition = "bUseAutomaticGears!=true&&!bUseHighLowRatios", EditConditionHides, DisplayName = "Reverse Gear Ratios"))
+	UPROPERTY(EditAnywhere, meta = (EditCondition = "bUseAutomaticGears!=true&&!bUseHighLowRatios", EditConditionHides, DisplayName = "Reverse Gear Ratios"))
+	//Reverse gear ratios if vehicle does NOT have a changeable transmission system
 	TArray<FSingularGearCombo> ReverseGearRatiosSingular;
 
-	/** Forward gear ratios for automatic transmission */
-	UPROPERTY(EditAnywhere/*, Category = Setup*/, AdvancedDisplay, meta = (EditCondition = "bUseAutomaticGears==true", EditConditionHides, DisplayName = "Forward Gear Ratios"))
+	UPROPERTY(EditAnywhere, meta = (EditCondition = "bUseAutomaticGears==true", EditConditionHides, DisplayName = "Forward Gear Ratios"))
+	//Forward gear ratios if vehicle has automatic transmission
 	TArray<float> ForwardGearRatiosAutomatic;
 
-	/** Reverse gear ratio(s) for automatic transmission*/
-	UPROPERTY(EditAnywhere, AdvancedDisplay/*, Category = Setup*/, meta = (EditCondition = "bUseAutomaticGears==true", EditConditionHides, DisplayName = "Reverse Gear Ratios"))
+	UPROPERTY(EditAnywhere, meta = (EditCondition = "bUseAutomaticGears==true", EditConditionHides, DisplayName = "Reverse Gear Ratios"))
+	//Reverse gear ratios if vehicle has automatic transmission
 	TArray<float> ReverseGearRatiosAutomatic;
 
-	UPROPERTY(EditAnywhere/*, Category = Setup*/, AdvancedDisplay, meta = (EditCondition = "bUseAutomaticGears!=true"))
+	UPROPERTY(EditAnywhere, meta = (EditCondition = "bUseAutomaticGears!=true"))
+	//Should vehicle stop immediately if no gas or clutch is pressed, or should it wait till minimum speed for current gear is reached?
 	bool instantStopOnNoGasOrClutch = false;
 
-	/** Engine Revs at which gear up change ocurrs */
-	UPROPERTY(EditAnywhere, meta = (ClampMin = "0.0", UIMin = "0.0", ClampMax = "50000.0", UIMax = "50000.0", EditCondition = "bUseAutomaticGears==true")/*, Category = Setup*/)
+	UPROPERTY(EditAnywhere, meta = (ClampMin = "0.0", UIMin = "0.0", EditCondition = "bUseAutomaticGears==true"))
+	//Engine RPM at which gear up change ocurrs for automatic transmission
 	float ChangeUpRPM;
 
-	/** Engine Revs at which gear down change ocurrs */
-	UPROPERTY(EditAnywhere, meta = (ClampMin = "0.0", UIMin = "0.0", ClampMax = "50000.0", UIMax = "50000.0", EditCondition = "bUseAutomaticGears==true")/*, Category = Setup*/)
+	UPROPERTY(EditAnywhere, meta = (ClampMin = "0.0", UIMin = "0.0", EditCondition = "bUseAutomaticGears==true"))
+	//Engine RPM at which gear down change ocurrs for automatic transmission
 	float ChangeDownRPM;
 
-	/** Time it takes to switch gears (seconds) */
-	UPROPERTY(EditAnywhere/*, Category = Setup*/, meta = (ClampMin = "0.0", UIMin = "0.0"))
+	UPROPERTY(EditAnywhere, meta = (ClampMin = "0.0", UIMin = "0.0", EditCondition = "bUseAutomaticGears==true"))
+	//Time it takes for gear change to occur in automatic transmission
 	float GearChangeTime;
 
+	UPROPERTY(EditAnywhere)
 	/** Mechanical frictional losses mean transmission might operate at 0.94 (94% efficiency) */
-	UPROPERTY(EditAnywhere, AdvancedDisplay/*, Category = Setup*/)
 	float TransmissionEfficiency;
 
 	const Chaos::FSimpleTransmissionConfig& GetPhysicsTransmissionConfig()
@@ -817,23 +822,23 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleSteeringConfig
 	/** Single angle : both wheels steer by the same amount
 	 *  AngleRatio   : outer wheels on corner steer less than the inner ones by set ratio
 	 *  Ackermann	 : Ackermann steering principle is applied */
-	UPROPERTY(EditAnywhere/*, Category = SteeringSetup*/)
+	UPROPERTY(EditAnywhere)
 	EDynamicSteeringType SteeringType;
 
-	/** Only applies when AngleRatio is selected */
-	UPROPERTY(EditAnywhere/*, Category = SteeringSetup*/, meta = (EditCondition = "SteeringType==EDynamicSteeringType::AngleRatio"))
+	//Only applies when AngleRatio is selected
+	UPROPERTY(EditAnywhere, meta = (EditCondition = "SteeringType==EDynamicSteeringType::AngleRatio"))
 	float AngleRatio;
 
-	UPROPERTY(EditAnywhere/*, Category = SteeringSetup*/)
-	//Whether to use steer angle mentioned in wheels, or the one mentioned inside coponent
+	UPROPERTY(EditAnywhere)
+	//Whether to use steer angle mentioned in wheels, or the one mentioned here
 	bool useOverrideSteerAngle = false; 
 
-	UPROPERTY(EditAnywhere/*, Category = SteeringSetup*/, meta = (EditCondition = "useOverrideSteerAngle"))
+	UPROPERTY(EditAnywhere, meta = (EditCondition = "useOverrideSteerAngle"))
 	//Wheel turn angle to override the angle mentioned in wheels
 	float overrideSteerAngle = 15;
 
-	/** Maximum steering versus forward speed (MPH) */
-	UPROPERTY(EditAnywhere/*, Category = SteeringSetup*/)
+	UPROPERTY(EditAnywhere)
+	//Maximum steering versus forward speed (MPH)
 	FRuntimeFloatCurve SteeringCurve;
 
 
@@ -973,7 +978,7 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicFunctionalities
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Changeable Differential Systems?", AllowPrivateAccess = "true"))
 	//Does Vehicle have capability to change between the 2 differentials?
 	bool vehicleHasMultipleDifferentials = true;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Changeable Gear Ratios?", AllowPrivateAccess = "true", EditCondition = "isVehicleAutomaticTransmission"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Changeable Transmission System?", AllowPrivateAccess = "true", EditCondition = "isVehicleAutomaticTransmission"))
 	//Does Vehicle have high and low gear ratios for each gear? 
 	bool vehicleHasHighLowGears = true;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Manual Fuel Handle?", AllowPrivateAccess = "true", EditCondition = "isVehicleAutomaticTransmission"))
@@ -986,9 +991,10 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicFunctionalities
 	//Allow vehicle to start if not in neutral (but clutch pressed). Default is true
 	bool vehicleCanStartWithoutNeutralGear = true;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle Should Slide on Slopes?", AllowPrivateAccess = "true"))
+	//Should vehicle auto slide on slopes or slow down to rest while on slope?
 	bool vehicleShouldSlideOnSlope = true;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities|Non Functional Aspects", meta = (DisplayName = "Vehicle has Non Functional Aspects?", AllowPrivateAccess = "true"))
-	//Does Vehicle have specific transfer case with differing ratios?
+	//Does Vehicle have non funcitonal aspects? (windscreen wipers etc)
 	bool vehicleHasNonFunctionalAspects = true;
 
 	void SetTransmissionNature(bool isAutomatic = true)

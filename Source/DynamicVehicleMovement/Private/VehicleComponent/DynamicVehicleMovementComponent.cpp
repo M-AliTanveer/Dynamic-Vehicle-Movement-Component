@@ -1806,8 +1806,7 @@ FVector UDynamicVehicleMovementComponent::GetWheelRestingPosition(const FDynamic
 	return LocateBoneOffset(WheelSetup.BoneName, Offset);
 }
 
-// Access to data
-float UDynamicVehicleMovementComponent::GetEngineRotationSpeed()
+float UDynamicVehicleMovementComponent::GetEngineRotationSpeed() const
 {
 	float EngineRPM = 0.f;
 
@@ -1815,16 +1814,6 @@ float UDynamicVehicleMovementComponent::GetEngineRotationSpeed()
 	{
 		EngineRPM = PVehicleOutput->EngineRPM;
 
-		if (derivedPtrForSimulationClass && isDownshift)
-		{
-			float tempVehicleRPM = derivedPtrForSimulationClass->targetRPM_BasedOnFuel;
-
-			if (EngineRPM <= tempVehicleRPM)
-			{
-				isDownshift = false;
-				UE_LOG(LogTemp, Warning, TEXT("GetEngineRotationSpeed-> LINE 1825"));
-			}
-		}
 		if (!IsEngineStarted())
 		{
 			EngineRPM = 0;
@@ -1832,7 +1821,6 @@ float UDynamicVehicleMovementComponent::GetEngineRotationSpeed()
 		if (useDelayedRPM)
 		{
 			EngineRPM = fakeRPM;
-			UE_LOG(LogTemp, Warning, TEXT("GetEngineRotationSpeed-> LINE 1835"));
 
 		}
 	}
@@ -4579,7 +4567,6 @@ bool UDynamicVehicleMovementComponent::SetNewGear(int GearNum, bool changeImmedi
 	}
 }
 
-//Returns true if Value changed. False if value is same or can not be changed
 bool UDynamicVehicleMovementComponent::SetEngineStarterValue(bool starterValue)
 {
 	if (currentEngineStartedValue == starterValue)
@@ -4643,19 +4630,22 @@ void UDynamicVehicleMovementComponent::BeginPlay()
 
 void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
-	bool overRideSlopeBreak = false;
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	bool overRideSlopeBreak = false;
 	float currentVehicleSpeed = GetVehicleSpeedInKM_PerHour();
 	
-	//gear bases Breaking
-	
+	//gear based Breaking ***************************
 	float currentGear = GetCurrentActiveGear();
 	float maxSpeedForGear = BIG_NUMBER;
 	if (currentGear > 0)
+	{
 		maxSpeedForGear = TransmissionSetup.GetMaximumSpeedForGear(currentGear - 1, true);
+	}
 	else if (currentGear < 0)
+	{
 		maxSpeedForGear = TransmissionSetup.GetMaximumSpeedForGear(currentGear * -1 - 1, false);
-
+	}
 	if (currentVehicleSpeed > maxSpeedForGear)
 	{
 		SetHandbrakeInput(true);
@@ -4671,13 +4661,28 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 	}
 	else
 	{
-		SetHandbrakeInput(false);
+		if(!currentInputs.currentHandbreakValue)
+			SetHandbrakeInput(false);
 		overRideSlopeBreak = false;
 
 	}
+	//gear based Breaking ends here ***************************
+
+	//setting downshift status ********************************
+	//as a workaround for proper engine breaking effect on RPM even with RPM limited by fuel
+	if (derivedPtrForSimulationClass && isDownshift)
+	{
+		float tempVehicleRPM = derivedPtrForSimulationClass->targetRPM_BasedOnFuel;
+		float EngineRPM = PVehicleOutput->EngineRPM;
+		if (EngineRPM <= tempVehicleRPM)
+		{
+			isDownshift = false;
+		}
+	}
+	//setting downshift status ends here ***********************
 	
 
-	//set Accelerate/Decelerate Bool. Default is decceleration
+	//set Accelerate/Decelerate Bool ***************************
 	if (previousVehicleSpeed - currentVehicleSpeed >= KINDA_SMALL_NUMBER)
 	{
 		isVehicleAccelerating = false;
@@ -4688,7 +4693,9 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 		isVehicleAccelerating = true;
 		previousVehicleSpeed = currentVehicleSpeed;
 	}
+	//set Accelerate/Decelerate Bool ends here *****************
 
+	//Action Error check when Engine Engaged *******************
 	if (currentEngineState == EEngineState::EngineEngaged)
 	{
 		UpdateVehicleEngineState();
@@ -4705,7 +4712,6 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 				actionErrorCaused.Broadcast(actionError);
 			}
 		}
-
 		if (currentInputs.currentHandbreakValue == true)
 		{
 			if (doOnceForParkingBreakError)
@@ -4720,10 +4726,16 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 		}
 
 	}
+	//Action Error check when Engine Engaged ends here **********
+
+	//Precautionary throttle to 0, when engine state off, since engine is never truly off in chaos vehicles *******************
 	if (currentEngineState == EEngineState::EngineOff || currentEngineState == EEngineState::EngineIdle)
 	{
 		SetThrottleInput(0);
 	}
+	//ends here *******************
+
+	//Transferring data to simulation class here *******************
 	if (vehicleFunctionalities.vehicleHasManualFuelHandle)
 	{
 		if (currentEngineState != EEngineState::EngineOff)
@@ -4741,7 +4753,9 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 			}
 		}
 	}
+	//ends here *******************
 
+	//Engine Jump Start Condition Setup *******************
 	if (currentEngineStartedValue == false && (currentEngineState == EEngineState::EngineGearChangeable || currentEngineState == EEngineState::EngineDisengaged))
 	{
 		if (derivedPtrForSimulationClass)
@@ -4750,8 +4764,6 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 			if (engineJumpstartRPM > EngineSetup.EngineIdleRPM)
 			{
 				canEngineJumpStart = true;
-				//UE_LOG(LogTemp, Log, TEXT("Can be jumpstarted"));
-				//engine JumpStart
 			}
 			else
 			{
@@ -4759,7 +4771,9 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 			}
 		}
 	}
+	//ends here *******************
 
+	//Distance Tracking *******************
 	if (shouldTrackTravelDistance)
 	{
 		FVector currentPosition = GetActorLocation();
@@ -4767,7 +4781,9 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 		TotalDistanceTraveled += DistanceTraveledThisFrame;
 		previousPosition = currentPosition;
 	}
+	//ends here *******************
 	
+	//Vehicle Slide on Slope *******************
 	if (vehicleFunctionalities.vehicleShouldSlideOnSlope && !overRideSlopeBreak)
 	{
 		float slopeAngle = 0;
@@ -4841,7 +4857,7 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 			}
 		}
 	}
-	
+	//ends here *******************
 }
 
 void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
