@@ -124,9 +124,6 @@ FVector FDynamicWheelState::GetVelocityAtPoint(const Chaos::FRigidBodyHandle_Int
 	}
 }
 
-/**
- * UDynamicVehicleSimulation
- */
 bool UDynamicVehicleSimulation::CanSimulate() const
 {
 	if (UChaosVehicleSimulation::CanSimulate() == false)
@@ -872,8 +869,7 @@ void UDynamicVehicleSimulation::ProcessMechanicalSimulation(float DeltaTime)
 			bool bypassMaxCheck = false;
 			float engineMaxRPM = dataImpactingSimulation.engineData.MaxRPM;
 
-			maxAllowableRPM = UKismetMathLibrary::MapRangeClamped(dataImpactingSimulation.netFuelIntakeValue, dataImpactingSimulation.netFuelIntakeIdleRPMRequirement, dataImpactingSimulation.netFuelIntakeMaxRange,
-				dataImpactingSimulation.engineData.EngineIdleRPM, dataImpactingSimulation.engineData.MaxRPM);
+			maxAllowableRPM = GetCalculatedRPM_BasedOnFuelIntake();
 			targetRPM_BasedOnFuel = maxAllowableRPM;
 	
 			if (PTransmission.GetEngineRPMFromWheelRPM(WheelRPM) >= dataImpactingSimulation.engineData.EngineIdleRPM)
@@ -1201,6 +1197,21 @@ float UDynamicVehicleSimulation::GetRelativeEngineRPM_FromSpeed(float currentSpe
 
 }
 
+float UDynamicVehicleSimulation::GetCalculatedRPM_BasedOnFuelIntake()
+{
+	float RPM = 0;
+	if (dataImpactingSimulation.isFilled)
+	{
+		RPM = UKismetMathLibrary::MapRangeClamped(dataImpactingSimulation.netFuelIntakeValue, dataImpactingSimulation.netFuelIntakeIdleRPMRequirement, dataImpactingSimulation.netFuelIntakeMaxRange,
+			dataImpactingSimulation.engineData.EngineIdleRPM, dataImpactingSimulation.engineData.MaxRPM);
+	}
+	else
+	{
+		RPM = 0;
+	}
+	return RPM;
+}
+
 void UDynamicVehicleSimulation::FillOutputState(FChaosVehicleAsyncOutput& Output)
 {
 	// #Note: remember to copy/interpolate values from the physics thread output in UChaosVehicleMovementComponent::ParallelUpdate
@@ -1265,11 +1276,6 @@ void UDynamicVehicleSimulation::UpdateConstraintHandles(TArray<FPhysicsConstrain
 	ConstraintHandles = ConstraintHandlesIn;
 }
 
-/**
- * UDynamicVehicleMovementComponent
- */
-
-// Public
 void UDynamicVehicleMovementComponent::Serialize(FArchive& Ar)
 {
 	Super::Serialize(Ar);
@@ -1498,7 +1504,6 @@ void UDynamicVehicleMovementComponent::PrevDebugPage()
 	DebugPage = (EDynamicDebugPages)PageAsInt;*/
 }
 
-// Setup
 void UDynamicVehicleMovementComponent::ComputeConstants()
 {
 	Super::ComputeConstants();
@@ -2578,8 +2583,6 @@ void UDynamicVehicleMovementComponent::SetSnapshot(const FWheeledSnaphotData& Sn
 	}
 }
 
-//////////////////////////////////////////////////////////////////////////
-
 void UDynamicVehicleMovementComponent::SetMaxEngineTorque(float Torque)
 {
 	if (FBodyInstance* TargetInstance = GetBodyInstance())
@@ -3100,11 +3103,11 @@ void UDynamicVehicleMovementComponent::PostEditChangeProperty(struct FPropertyCh
 	if (isVehicleAutomatic && PropertyName=="isVehicleAutomatic")		//Auto Vehicle 
 	{
 		//Set functionality defaults
-		vehicleFunctionalities.vehicleHasHighLowGears = false;
+		vehicleFunctionalities.vehicleHasHighLowGears = false; 
 		vehicleFunctionalities.vehicleHasManualFuelHandle = false;
-		vehicleFunctionalities.vehicleHasTransferCase = false;
-		vehicleFunctionalities.vehicleHasMultipleDifferentials = false;
-		vehicleFunctionalities.vehicleHasBreakAssist = false;
+		//vehicleFunctionalities.vehicleHasTransferCase = false; Vehicle can have changeable trasnfercase in automatic
+		//vehicleFunctionalities.vehicleHasMultipleDifferentials = false; Possible in automatic
+		
 
 		//Set transmission setup values
 		TransmissionSetup.bUseHighLowRatios = false;
@@ -3112,14 +3115,7 @@ void UDynamicVehicleMovementComponent::PostEditChangeProperty(struct FPropertyCh
 	}
 	else if (!isVehicleAutomatic && PropertyName == "isVehicleAutomatic")	//Manual Vehicle
 	{
-		vehicleFunctionalities.vehicleHasHighLowGears = true;
-		TransmissionSetup.bUseHighLowRatios = true;
 		TransmissionSetup.bUseAutomaticGears = false;
-
-		vehicleFunctionalities.vehicleHasBreakAssist = true;
-		vehicleFunctionalities.vehicleHasManualFuelHandle = true;
-		vehicleFunctionalities.vehicleHasTransferCase = true;
-		vehicleFunctionalities.vehicleHasMultipleDifferentials = true;
 
 		bReverseAsBrake = false;
 		bThrottleAsBrake = false;
@@ -3205,7 +3201,7 @@ bool UDynamicVehicleMovementComponent::CanEditChange(const FProperty* InProperty
 	}
 	if (InProperty->GetFName() == GET_MEMBER_NAME_CHECKED(UDynamicVehicleMovementComponent, transferCaseConfig))
 	{
-		return ParentVal && vehicleFunctionalities.vehicleHasTransferCase && !isVehicleAutomatic;
+		return ParentVal && vehicleFunctionalities.vehicleHasTransferCase;
 	}
 	if (InProperty->GetFName() == GET_MEMBER_NAME_CHECKED(UDynamicVehicleMovementComponent, vehicleNonFunctionalAspects))
 	{
@@ -3268,6 +3264,14 @@ UDynamicVehicleMovementComponent::UDynamicVehicleMovementComponent(const FObject
 		setGearFunc->SetMetaData(FName("Category"), TEXT("Game|Components|DynamicVehicleMovement"));
 		//setGearFunc->FunctionFlags &= ~FUNC_BlueprintCallable;
 	}
+
+	UFunction* setAutomaticGear = StaticClass()->FindFunctionByName(FName("SetUseAutomaticGears"));
+	if (setAutomaticGear != nullptr)
+	{
+		setAutomaticGear->SetMetaData(FName("Category"), TEXT("Game|Components|DynamicVehicleMovement"));
+		setAutomaticGear->FunctionFlags &= ~FUNC_BlueprintCallable;
+	}
+
 	for (TFieldIterator<FProperty> propertyIterator(StaticClass()); propertyIterator; ++propertyIterator)
 	{
 		FProperty* Property = *propertyIterator;
@@ -3275,7 +3279,7 @@ UDynamicVehicleMovementComponent::UDynamicVehicleMovementComponent(const FObject
 
 		if ("VehicleSetup" == FName(*CurrentCategory))
 		{
-			Property->SetMetaData(TEXT("Category"), "Dynamic Vehicle Movement|Vehicle Setup");
+			Property->SetMetaData(TEXT("Category"), "Dynamic Vehicle Movement|Core Setup|Vehicle Setup");
 		}
 
 	}
@@ -3396,9 +3400,9 @@ bool UDynamicVehicleMovementComponent::CanChangeDifferentialSystem()
 {
 	if (vehicleFunctionalities.vehicleHasMultipleDifferentials)
 	{
-		float currentSpeed = GetForwardSpeedMPH();
+		float currentSpeed = GetVehicleSpeedInKM_PerHour();
 		int currentGear = GetCurrentActiveGear();
-		if (currentGear == 0 && (currentSpeed<1 && currentSpeed>-1))
+		if (currentGear == 0 && (currentSpeed<1))
 			return true;
 		else
 			return false;
@@ -3411,8 +3415,8 @@ bool UDynamicVehicleMovementComponent::CanChangeTransferCasePosition()
 {
 	if (vehicleFunctionalities.vehicleHasTransferCase)
 	{
-		float currentSpeed = GetForwardSpeedMPH();
-		if (currentSpeed<1 && currentSpeed>-1)
+		float currentSpeed = GetVehicleSpeedInKM_PerHour();
+		if (currentSpeed<1)
 			return true;
 		else
 			return false;
@@ -3445,10 +3449,16 @@ int UDynamicVehicleMovementComponent::GetCurrentActiveGear() const
 {
 	int activeGear;
 	activeGear = GetCurrentGear();
-	if (activeGear > 0)
-		activeGear = (activeGear + 1) / 2;
-	else
-		activeGear = (activeGear - 1) / 2;
+	if (!isVehicleAutomatic)
+	{
+		if (vehicleFunctionalities.vehicleHasHighLowGears)
+		{
+			if (activeGear > 0)
+				activeGear = (activeGear + 1) / 2;
+			else
+				activeGear = (activeGear - 1) / 2;
+		}
+	}
 	return activeGear;
 }
 
@@ -3495,7 +3505,7 @@ bool UDynamicVehicleMovementComponent::IsVehicleCurrentlyAccelerating() const
 	return isVehicleAccelerating;
 }
 
-void UDynamicVehicleMovementComponent::ChangeTransmissionSystem(bool useHighGears = true)
+void UDynamicVehicleMovementComponent::ChangeHighLowGearSystem(bool useHighGears = true)
 {
 	if (vehicleFunctionalities.vehicleHasHighLowGears)
 	{
@@ -4184,9 +4194,6 @@ bool UDynamicVehicleMovementComponent::ChangeHandBrakeState(bool handBreakActive
 		if (!handBreakActive)
 			handbrakeInputReleased.Broadcast();
 	}
-	
-
-
 
 	if (vehicleLights.useVehicleLights)
 	{
@@ -4672,7 +4679,7 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 	//as a workaround for proper engine breaking effect on RPM even with RPM limited by fuel
 	if (derivedPtrForSimulationClass && isDownshift)
 	{
-		float tempVehicleRPM = derivedPtrForSimulationClass->targetRPM_BasedOnFuel;
+		float tempVehicleRPM = derivedPtrForSimulationClass->GetCalculatedRPM_BasedOnFuelIntake();
 		float EngineRPM = PVehicleOutput->EngineRPM;
 		if (EngineRPM <= tempVehicleRPM)
 		{
@@ -4874,7 +4881,7 @@ void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
 		}
 		else
 		{
-			if (GetNetFuelIntake() > 0)
+			if (GetCurrentActiveGear()>0 || GetCurrentActiveGear() < 0)
 			{
 				valueToSet = EEngineState::EngineEngaged;
 			}
@@ -5438,6 +5445,32 @@ bool UDynamicVehicleMovementComponent::PlayRoadSound(USoundBase* newSound, bool 
 		return true;
 	}
 	return false;
+}
+
+void UDynamicVehicleMovementComponent::ChangeTransmissionSystem(bool isAutomatic)
+{
+	if (isVehicleAutomatic)
+	{
+		if (isAutomatic)
+		{
+			return;
+		}
+		else
+		{
+			isVehicleAutomatic = false;
+			SetUseAutomaticGears(false);
+		}
+	}
+	else
+	{
+		if (isAutomatic)
+		{
+			isVehicleAutomatic = true;
+			SetUseAutomaticGears(true);
+		}
+		else
+			return;
+	}
 }
 
 

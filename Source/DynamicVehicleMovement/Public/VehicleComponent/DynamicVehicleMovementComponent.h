@@ -93,9 +93,12 @@ public:
 	TArray<FOverlapResult> OverlapResults;
 	bool bOverlapHit;
 	FBox QueryBox;
-	float targetRPM_BasedOnFuel = 0;
+	
+	//Returns the target RPM based on fuel intake otherwise 0
+	float GetCalculatedRPM_BasedOnFuelIntake();
 
 private:
+	float targetRPM_BasedOnFuel = 0;
 	float prevSpeed = 0;
 };
 
@@ -190,38 +193,38 @@ public:
 	UPROPERTY(BlueprintAssignable)
 	//Fires when fog lights are turned off.
 	FOnVehicleInputReleased fogLightsInputReleased;
-	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Wheels")
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Core Setup|Wheels")
 	//Is Wheel Suspension Enabled?
 	bool bSuspensionEnabled;
-	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Wheels")
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Core Setup|Wheels")
 	//Is Wheel Friction Enabled?
 	bool bWheelFrictionEnabled;
-	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Wheels")
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Core Setup|Wheels")
 	bool bLegacyWheelFrictionPosition;
-	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Wheels")
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Core Setup|Wheels")
 	//Wheels to create when Differential System 1 is active. Default is System 2
 	TArray<FDynamicWheelSetup> WheelSetupsForDifferentialSystem1;
-	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Wheels")
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Core Setup|Wheels")
 	//Wheels to create when Differential System 2 is active. Default is System 2
 	TArray<FDynamicWheelSetup> WheelSetupsForDifferentialSystem2;
-	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Wheels")
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Core Setup|Wheels")
 	struct FCollisionResponseContainer WheelTraceCollisionResponses;
 	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement")
 	//Is Mechanical Simulation Enabled? Disabling this means the vehicle is just a dummy car.
 	bool bMechanicalSimEnabled;
-	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement", meta = (EditCondition = "bMechanicalSimEnabled"))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Core Setup", meta = (EditCondition = "bMechanicalSimEnabled"))
 	//The vehicle's engine setup
 	FDynamicVehicleEngineConfig EngineSetup;
-	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement", meta = (EditCondition = "bMechanicalSimEnabled"))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Core Setup", meta = (EditCondition = "bMechanicalSimEnabled"))
 	//The vehicle's Differential Setup
 	FDynamicVehicleDifferentialConfig DifferentialSetup;
-	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement", meta = (EditCondition = "bMechanicalSimEnabled"))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Core Setup", meta = (EditCondition = "bMechanicalSimEnabled"))
 	//The vehicle's Transmission Setup
 	FDynamicVehicleTransmissionConfig TransmissionSetup;
-	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement")
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Core Setup")
 	//The vehicle's Steering Setup
 	FDynamicVehicleSteeringConfig SteeringSetup;
-	UPROPERTY(transient, duplicatetransient, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Wheels")
+	UPROPERTY(transient, duplicatetransient, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Core Setup|Wheels")
 	//Our instanced wheels
 	TArray<TObjectPtr<class UDynamicWheel>> Wheels;
 
@@ -497,7 +500,7 @@ public:
 	FDyamicTransferCaseConfig GetTransferCaseConfig() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement", BlueprintPure)
-	//Returns whether any form of break is active?
+	//Returns whether any form of break is active? Override Value acts as additional value to test for
 	bool IsBreakActiveInAnyForm(bool overrideValue = false) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement", BlueprintPure)
@@ -570,7 +573,7 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System") 
 	//Change between using High Gear Ratios or Low Gear Ratios. True for using High Gear. False for Low Gear. Only works if Changeable Transmission systems are enabled
-	void ChangeTransmissionSystem(bool useHighGears);
+	void ChangeHighLowGearSystem(bool useHighGears);
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System")
 	// Set the user input for gear accounting for high, low gear. It is suggested to use the wrappers GearUp, GearDown, GoNeutral instead of this one  (-1 reverse, 0 neutral, 1+ forward)
@@ -637,6 +640,9 @@ public:
 	//Play Road sound through vehicle
 	bool PlayRoadSound(USoundBase* newSound, bool play, float volume = 1);
 
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System")
+	//Change Transmission system between manual and automatic. Please ensure that the correct gear ratios are set for both manual and automatic systems. Safe to call at runtime
+	void ChangeTransmissionSystem(bool isAutomatic);
 
 #if WITH_EDITOR
 	virtual bool CanEditChange(const FProperty* InProperty) const override;
@@ -688,7 +694,7 @@ protected:
 	}
 
 private:
-	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement", meta = (DisplayName = "Is Using System 1 For Differential?"))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Defaults", meta = (DisplayName = "Is Using System 1 For Differential?"))
 	//True for System 1 in use, False for System 2. Default is System 2.
 	bool useSystem1ForDifferential = false; 
 	UPROPERTY()
@@ -715,19 +721,19 @@ private:
 	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement", meta = (DisplayName = "Vehicle has automatic transmission?", DisplayAfter = "bMechanicalSimEnabled"))
 	//True = Automatic Car. False = Manual Car
 	bool isVehicleAutomatic = false;
-	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement", meta = (DisplayName = "Vehicle Optional Functionalities", DisplayAfter = "bMechanicalSimEnabled"))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Vehicle Functionalities", meta = (DisplayName = "Vehicle Optional Functionalities", DisplayAfter = "bMechanicalSimEnabled"))
 	//Various vehicle functionalities that can be enabled or disabled. 
 	FDynamicFunctionalities vehicleFunctionalities;
-	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement", meta = (DisplayName = "Vehicle Optional Non Functional Aspects", DisplayAfter = "bMechanicalSimEnabled"))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Vehicle Functionalities", meta = (DisplayName = "Vehicle Optional Non Functional Aspects", DisplayAfter = "bMechanicalSimEnabled"))
 	//Vehicle Non function aspects like wipers etc
 	FDynamicNonFunctionalVehicleAspects vehicleNonFunctionalAspects;
-	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement", meta = (DisplayName = "Transfer Case System", DisplayAfter = "vehicleFunctionalities"))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Core Setup", meta = (DisplayName = "Transfer Case System", DisplayAfter = "vehicleFunctionalities"))
 	//The vehicle's transfer case setup
 	FDyamicTransferCaseConfig transferCaseConfig;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement", meta = (DisplayName = "Vehicle Lights", AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Vehicle Functionalities", meta = (DisplayName = "Vehicle Lights", AllowPrivateAccess = "true"))
 	//The vehicle's lights. Vehicle Lights must be added as components inside the blueprint, and then the exact name of the blueprints should be specified inside the speicifc fields within these variables.
 	FDynamicVehicleLights vehicleLights;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement", meta = (DisplayName = "Vehicle Sounds", AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Vehicle Functionalities", meta = (DisplayName = "Vehicle Sounds", AllowPrivateAccess = "true"))
 	//Vehicle's various sounds.
 	FDynamicVehicleSounds vehicleSounds;
 	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Defaults", meta = (DisplayName = "Edit Default Input Ranges"))

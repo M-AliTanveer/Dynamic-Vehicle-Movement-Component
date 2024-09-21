@@ -672,9 +672,9 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleTransmissionConfig
 		else
 		{
 			if (forwardRatios && (gearNum > 0 && gearNum < ForwardGearRatiosSingular.Num()))
-				retVal =  ForwardGearRatiosSingular[gearNum].MinimumSpeed / transferCaseModifer;
+				retVal = ForwardGearRatiosSingular[gearNum - 1].MinimumSpeed / transferCaseModifer > ForwardGearRatiosSingular[gearNum - 1].MinimumSpeed ? ForwardGearRatiosSingular[gearNum - 1].MinimumSpeed : ForwardGearRatiosSingular[gearNum - 1].MinimumSpeed / transferCaseModifer;
 			else if (gearNum > 0 && gearNum < ReverseGearRatiosSingular.Num())
-				retVal =  ReverseGearRatiosSingular[gearNum].MinimumSpeed / transferCaseModifer;
+				retVal = ReverseGearRatiosSingular[gearNum - 1].MinimumSpeed / transferCaseModifer > ReverseGearRatiosSingular[gearNum - 1].MinimumSpeed ? ReverseGearRatiosSingular[gearNum - 1].MinimumSpeed : ReverseGearRatiosSingular[gearNum - 1].MinimumSpeed / transferCaseModifer;
 			else
 				retVal =  0;
 		}
@@ -684,22 +684,29 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleTransmissionConfig
 
 	float GetMaximumSpeedForGear(int gearNum, bool forwardRatios) const
 	{
+		float retVal = 0;
 		if (bUseAutomaticGears)
-			return 0.0f;
+			retVal = 0.0f;
 		else if (bUseHighLowRatios)
 		{
-			if (forwardRatios)
-				return ForwardGearRatios[gearNum ].MaximumSpeed;
+			if (forwardRatios && (gearNum > 0 && gearNum <= ForwardGearRatios.Num()))
+				retVal = ForwardGearRatios[gearNum - 1].MaximumSpeed / transferCaseModifer > ForwardGearRatios[gearNum - 1].MaximumSpeed ? ForwardGearRatios[gearNum - 1].MaximumSpeed : ForwardGearRatios[gearNum - 1].MaximumSpeed / transferCaseModifer;
+			else if (gearNum > 0 && gearNum <= ReverseGearRatios.Num())
+				retVal = ReverseGearRatios[gearNum - 1].MaximumSpeed / transferCaseModifer > ReverseGearRatios[gearNum - 1].MaximumSpeed ? ReverseGearRatios[gearNum - 1].MaximumSpeed : ReverseGearRatios[gearNum - 1].MaximumSpeed / transferCaseModifer;
 			else
-				return ReverseGearRatios[gearNum ].MaximumSpeed;
+				retVal = 0;
 		}
 		else
 		{
-			if (forwardRatios)
-				return ForwardGearRatiosSingular[gearNum].MaximumSpeed;
+			if (forwardRatios && (gearNum > 0 && gearNum < ForwardGearRatiosSingular.Num()))
+				retVal = ForwardGearRatiosSingular[gearNum - 1].MaximumSpeed / transferCaseModifer > ForwardGearRatiosSingular[gearNum - 1].MaximumSpeed ? ForwardGearRatiosSingular[gearNum - 1].MaximumSpeed : ForwardGearRatiosSingular[gearNum - 1].MaximumSpeed / transferCaseModifer;
+			else if (gearNum > 0 && gearNum < ReverseGearRatiosSingular.Num())
+				retVal = ReverseGearRatiosSingular[gearNum - 1].MaximumSpeed / transferCaseModifer > ReverseGearRatiosSingular[gearNum - 1].MaximumSpeed ? ReverseGearRatiosSingular[gearNum - 1].MaximumSpeed : ReverseGearRatiosSingular[gearNum - 1].MaximumSpeed / transferCaseModifer;
 			else
-				return ReverseGearRatiosSingular[gearNum].MaximumSpeed;
+				retVal = 0;
 		}
+
+		return retVal;
 	}
 
 	float GetTransferCaseModifer()
@@ -984,7 +991,7 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicFunctionalities
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Manual Fuel Handle?", AllowPrivateAccess = "true", EditCondition = "isVehicleAutomaticTransmission"))
 	//Does Vehicle have high and low gear ratios for each gear? 
 	bool vehicleHasManualFuelHandle = true;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Transfer Case?", AllowPrivateAccess = "true", EditCondition = "isVehicleAutomaticTransmission"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Transfer Case?", AllowPrivateAccess = "true"))
 	//Does Vehicle have specific transfer case with differing ratios?
 	bool vehicleHasTransferCase = true;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle Can Start in Gear?", AllowPrivateAccess = "true"))
