@@ -26,6 +26,7 @@ public:
 	UDynamicVehicleSimulation(): bOverlapHit(false)
 	{
 		QueryBox.Init();
+
 	}
 
 	virtual ~UDynamicVehicleSimulation()
@@ -95,7 +96,7 @@ public:
 	FBox QueryBox;
 	
 	//Returns the target RPM based on fuel intake otherwise 0
-	float GetCalculatedRPM_BasedOnFuelIntake();
+	float GetCalculatedRPM(float WheelRPM);
 
 private:
 	float targetRPM_BasedOnFuel = 0;
@@ -448,7 +449,7 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement", BlueprintPure)
 	//Returns wether vehicle is automatic or manual
-	bool IsVehicleUsingAutomaticTransmission() const;
+	bool IsVehicleUsingAutomaticTransmission();
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Input", BlueprintPure)
 	//Returns current vehicle input structure
@@ -460,15 +461,15 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System", BlueprintPure)
 	//Returns Current Gear. Should be used instead of GetCurrentGear function.
-	int GetCurrentActiveGear() const;
+	int GetCurrentActiveGear();
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System", BlueprintPure)
 	//Returns Current Gear's ratio. Takes into account high/low gear switch. Returns with final ratio and transfer case ratio multiplied
-	float GetCurrentActiveGearRatio() const;
+	float GetCurrentActiveGearRatio();
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System", BlueprintPure)
 	//Final Gear ratio is multiplied with each individual gear's ratio. This eliminates that effect and returns true gear ratio.
-	float GetCurrentActiveGearRatioWithoutFinalGearRatioAffect() const;
+	float GetCurrentActiveGearRatioWithoutFinalGearRatioAffect();
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement", BlueprintPure)
 	//Returns speed in Kilometers Per hour
@@ -531,6 +532,37 @@ public:
 	//Is Gas Pedal Pressed above threshold value?
 	bool IsGasPedalPressed(float aboveValue = 0);
 
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System", BlueprintPure)
+	ETransmissionType GetVehicleTransmissionType();
+
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System", BlueprintPure)
+	bool IsVehicleInManualMode();
+
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System", BlueprintPure)
+	//Returns max gear allowed currently
+	int GetCurrentMaxGear();
+
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement", BlueprintPure)
+	//Is Turbo Mode Active?
+	bool IsTurboModeActive();
+
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement", BlueprintPure)
+	//Returns the set Duration for Turbo Mode, if enabled. Else returns 0
+	float GetTurboModeDuration();
+
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement", BlueprintPure)
+	//Returns the set factor for Turbo Mode Increase in Drive Torque, if enabled. Else returns 0
+	float GetTurboModeIncreaseFactor();
+
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement")
+	//The Duration in seconds for turbo Mode to Last. Minimum 0
+	//The Factor with which Drive Torque is increased. Less than 1 will cause slowing effect. 
+	void SetTurboModeData(float duration, float increaseFactor);
+
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement")
+	//Activates Turbo mode if enabled
+	void ActivateTurboMode();
+
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement")
 	//Enables or disables distance tracking;
 	void ToggleTrackingTravelDistance(bool enable);
@@ -576,6 +608,10 @@ public:
 	void ChangeHighLowGearSystem(bool useHighGears);
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System")
+	//Check if gear is changeable in any mode
+	bool CanChangeGear();
+
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System")
 	// Set the user input for gear accounting for high, low gear. It is suggested to use the wrappers GearUp, GearDown, GoNeutral instead of this one  (-1 reverse, 0 neutral, 1+ forward)
 	bool SetNewGear(int GearNum, bool changeImmediately=true);
 
@@ -594,6 +630,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System")
 	//Shift to first reverse gear directly
 	void PutInReverse();
+
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System")
+	//Set Automatic Vehicle to Drive Mode
+	void SetDriveModeForAutomatic();
+
+	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System")
+	//Limit Max gear in automatic mode to specified gear
+	bool SetMaxGearLock(int GearNum);
 
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Movement")
 	//Applies Throttle Input. Use this in Both Forward Movement and Reverse Movement
@@ -643,6 +687,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Dynamic Vehicle Movement|Transmission System")
 	//Change Transmission system between manual and automatic. Please ensure that the correct gear ratios are set for both manual and automatic systems. Safe to call at runtime
 	void ChangeTransmissionSystem(bool isAutomatic);
+	UFUNCTION()
+	void DeactivateTurboMode();
 
 #if WITH_EDITOR
 	virtual bool CanEditChange(const FProperty* InProperty) const override;
@@ -718,9 +764,6 @@ private:
 	UPROPERTY()
 	//struct containing all current vehicle input values
 	FDynamicInputData currentInputs;
-	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement", meta = (DisplayName = "Vehicle has automatic transmission?", DisplayAfter = "bMechanicalSimEnabled"))
-	//True = Automatic Car. False = Manual Car
-	bool isVehicleAutomatic = false;
 	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Vehicle Functionalities", meta = (DisplayName = "Vehicle Optional Functionalities", DisplayAfter = "bMechanicalSimEnabled"))
 	//Various vehicle functionalities that can be enabled or disabled. 
 	FDynamicFunctionalities vehicleFunctionalities;
@@ -739,10 +782,10 @@ private:
 	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement|Defaults", meta = (DisplayName = "Edit Default Input Ranges"))
 	//Allows to edit default input ranges.
 	bool editDefaultRanges = false;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Defaults|Transmission System", meta = (DisplayName = "Clutch Threshold Value", AllowPrivateAccess = "true", EditCondition="editDefaultRanges&&isVehicleAutomatic==false"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Defaults|Transmission System", meta = (DisplayName = "Clutch Threshold Value", AllowPrivateAccess = "true", EditCondition="editDefaultRanges"))
 	//The threshold value at and after which engine allows gear change. 
 	float clutchThresholdValue = 70; 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Defaults|Transmission System", meta = (DisplayName = "Clutch Disengagment Value", AllowPrivateAccess = "true", EditCondition="editDefaultRanges&&isVehicleAutomatic==false"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Defaults|Transmission System", meta = (DisplayName = "Clutch Disengagment Value", AllowPrivateAccess = "true", EditCondition="editDefaultRanges"))
 	//The value at and after which engine is disengaged from wheels. May cause unexpected behaviour if changed at runtime
 	float clutchDisengagementValue = 95; 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Defaults|Movement", meta = (DisplayName = "Gas Input Minimum Value", AllowPrivateAccess = "true", EditCondition="editDefaultRanges"))
@@ -763,15 +806,24 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Defaults|Movement", meta = (DisplayName = "Steering Input Maximum Value", AllowPrivateAccess = "true", EditCondition="editDefaultRanges"))
 	//Maximum possible value for steer wheel input. Maximum value = Complete Right Turn. 
 	float steerWheelMaxValue = 100;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Defaults|Transmission System", meta = (DisplayName = "Clutch Input Minimum Value", AllowPrivateAccess = "true", EditCondition="editDefaultRanges&&isVehicleAutomatic==false"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Defaults|Transmission System", meta = (DisplayName = "Clutch Input Minimum Value", AllowPrivateAccess = "true", EditCondition="editDefaultRanges"))
 	//Minimum possible value for clutch pedal input. 
 	float clutchPedalMinValue = 0;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Defaults|Transmission System", meta = (DisplayName = "Clutch Input Maximum Value", AllowPrivateAccess = "true", EditCondition="editDefaultRanges&&isVehicleAutomatic==false"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Defaults|Transmission System", meta = (DisplayName = "Clutch Input Maximum Value", AllowPrivateAccess = "true", EditCondition="editDefaultRanges"))
 	//Maximum possible value for clutch pedal input.  
 	float clutchPedalMaxValue = 100;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Defaults|Movement", meta = (DisplayName = "Minimum value of Fuel Intake to sustain Idle RPM", AllowPrivateAccess = "true", EditCondition = "editDefaultRanges&&isVehicleAutomatic==false"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Defaults|Movement", meta = (DisplayName = "Minimum value of Fuel Intake to sustain Idle RPM", AllowPrivateAccess = "true", EditCondition = "editDefaultRanges"))
 	//The threshold value at which engine can sustain idle RPM. Includes Net Intake from Gas Pedal and Manual Handle. See GetNetFuelIntake() for more info
 	float fuelValueToSustainIdleRPM = 30;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Defaults|Transmission System", meta = (DisplayName = "Break Percentage acceptable for automatic mode actions", AllowPrivateAccess = "true", EditCondition = "editDefaultRanges", ClampMin = "0.0", UIMin = "0.0", ClampMax = "1.0", UIMax = "1.0"))
+	//The percentage above which break needs to pressed to allow mode shifting in Automatic and Hybrid vehicles
+	float breakValueToAllowModeChange = 0.9;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Defaults|Movement", meta = (DisplayName = "Duration For Turbo Mode", AllowPrivateAccess = "true", EditCondition = "editDefaultRanges", ClampMin = "0.0", UIMin = "0.0"))
+	//The Duration in seconds for turbo Mode to Last. 
+	float turboModeDuration = 1;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Defaults|Movement", meta = (DisplayName = "Turbo Mode Increase Factor", AllowPrivateAccess = "true", EditCondition = "editDefaultRanges", ClampMin = "0.0", UIMin = "0.0"))
+	//The Factor with which Drive Torque is increased. Less than 1 will cause slowing effect. 
+	float turboModeFactor = 2;
 	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Movement", meta = (DisplayName = "Tracked Travel Distance", AllowPrivateAccess = "true"))
 	//Total Distance traveled used with distance tracking.
 	float TotalDistanceTraveled = 0;
@@ -779,8 +831,15 @@ private:
 	//Engine power transmission ratio to transmission system. Essentially how much power is transmitted to gears. 1 = Full (clutch not pressed) , 0 = None (clutch fully pressed)
 	float currentTransmissionRatio = 0;
 	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Transmission System", meta = (DisplayName = "Previous Gear", AllowPrivateAccess = "true"))
+	//Previous Gear that was active before current gear
 	int previousGear = 0;
+	UPROPERTY()
+	//Max Gear allowed for Auto Vehicle
+	int maxGearLock = 10;
 
+
+	UPROPERTY()
+	bool TurboModeActive = false;
 	UPROPERTY()
 	TObjectPtr<UAudioComponent> currentEngineSound;
 	UPROPERTY()
@@ -822,7 +881,9 @@ private:
 	UPROPERTY()
 	bool doOnceForDisableSlideConsoleCommand = true;
 	UPROPERTY()
-	bool isDownshift = false;
+	bool isInDownshiftRPMMode = false;
+	UPROPERTY()
+	int currentGearCached = 0;
 
 
 	UFUNCTION()
@@ -843,10 +904,13 @@ private:
 	void EndFakeRPM();
 	UFUNCTION()
 	void ModifyFakeRPM();
-
+	UFUNCTION()
+	void GearDownToMatchMaxGear();
+	
+	
 	
 
-	FTimerHandle rightIndicatorFlickerHandle, leftIndicatorFlickerHandle, decayedRPMSetter, decayedRPM;
+	FTimerHandle rightIndicatorFlicker_TimerHandle, leftIndicatorFlicker_TimerHandle, decayedRPMSetter_TimerHandle, decayedRPM_TimerHandle, gearDownToMaxGear_TimerHandle, turboMode_TimerHandle;
 
 
 	UDynamicVehicleSimulation* derivedPtrForSimulationClass ;

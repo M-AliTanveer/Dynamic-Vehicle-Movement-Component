@@ -13,11 +13,20 @@ enum class EActionErrorReason : uint8
 	GearsSkipped,
 	SpeedTooLowForGear,
 	ChangeGearWithoutAppropriateClutch,
-	ChangeToGearWithMovementInOppositeDirection,
+	ChangeToGearWithMovementInOppositeDirection_Critical,
 	AttemptToStartInGearWithoutClutch,
 	EngineEngagedOnNeutralTransferCase,
 	DriveWithHandBreakOn,
-	GasAndBrakeInputTogether
+	GasAndBrakeInputTogether_Critical,
+	AttemptedToSetGearHigherThanMaxGearLock
+};
+
+UENUM(BlueprintType)
+enum class ETransmissionType 
+{
+	Automatic,	//Automatic Transmission with no clutch
+	Manual,		//Manual Transmission with clutch and gear stick
+	Hybrid		//Hybrid transmission changeable between auto and manual via buttons. No Clutch in manual mode
 };
 
 USTRUCT(BlueprintType)
@@ -353,6 +362,10 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleEngineConfig
 	UPROPERTY(EditAnywhere, Category = Setup)
 	float EngineBrakeEffect;
 
+	UPROPERTY(EditAnywhere)
+	//How fast RPM Increases when its based on fuel input
+	float RPM_IncreasRate = 200;
+
 	/** Affects how fast the engine RPM speed up*/
 	UPROPERTY(EditAnywhere, Category = Setup, meta = (ClampMin = "0.01", UIMin = "0.01"))
 	float EngineRevUpMOI;
@@ -463,27 +476,32 @@ struct DYNAMICVEHICLEMOVEMENT_API FSingularGearCombo
 
 	FSingularGearCombo()
 	{
-		Ratio = 0;
+		RatioSingular = 0;
 	}
 
 	FSingularGearCombo(float singleValue)
 	{
-		Ratio = singleValue;
+		RatioSingular = singleValue;
 	}
 
 
 	FSingularGearCombo operator*(float number) const {
-		return { Ratio * number};
+		return { RatioSingular * number};
 	}
 
 
 	//Gear ratio to use
-	UPROPERTY(EditAnywhere)
-	float Ratio = 0;
+	UPROPERTY(EditAnywhere, meta = (DisplayName="Ratio"))
+	float RatioSingular = 0;
+	//Should we set a max speed and min speed for this gear?
+	UPROPERTY(EditAnywhere, meta = (DisplayName = "Use Speed Limitations?"))
+	bool useSpeedLimitations = true;
 	//Minimum speed is used to calculate engine stall condition when niether throttle nor clutch is pressed appropriately.
-	UPROPERTY(EditAnywhere, AdvancedDisplay, Category = Setup)
+	UPROPERTY(EditAnywhere, meta = (EditCondition = "useSpeedLimitations"))
+	//Minimum speed beyond which engine stalls if gas pedal isnt pressed
 	float MinimumSpeed = 0;
-	UPROPERTY(EditAnywhere, AdvancedDisplay, Category = Setup)
+	UPROPERTY(EditAnywhere, meta = (EditCondition = "useSpeedLimitations"))
+	//Max speed for this gear. -1 = No Max Speed
 	float MaximumSpeed = -1;
 
 };
@@ -500,10 +518,10 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleTransmissionConfig
 
 	friend class UDynamicleWheel;
 
-	/** Whether to use automatic transmission */
-	UPROPERTY()
-	bool bUseAutomaticGears;
-
+	UPROPERTY(EditAnywhere)
+	//Vehicle Transmission Type
+	ETransmissionType vehicleTransmissionType;
+	
 	UPROPERTY()
 	bool bUseAutoReverse;
 
@@ -514,43 +532,35 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleTransmissionConfig
 	//The final ratio is multiplied by all gear ratios before the ratio is fed into the sytstem. Useful for changing affect of all gears together. 
 	float FinalRatio;
 
-	UPROPERTY(EditAnywhere, meta = (EditCondition = "bUseAutomaticGears!=true&&bUseHighLowRatios", EditConditionHides))
-	//Forward gear ratios if vehicle has changeable transmission system
+	UPROPERTY(EditAnywhere, meta = (EditCondition = "vehicleTransmissionType==ETransmissionType::Manual&&bUseHighLowRatios", EditConditionHides))
+	//Forward gear ratios if vehicle has changeable transmission system between high/low
 	TArray<FHighLowGearCombo> ForwardGearRatios;
 
-	UPROPERTY(EditAnywhere, meta = (EditCondition = "bUseAutomaticGears!=true&&bUseHighLowRatios", EditConditionHides))
-	//Reverse gear ratios if vehicle has changeable transmission system
+	UPROPERTY(EditAnywhere, meta = (EditCondition = "vehicleTransmissionType==ETransmissionType::Manual&&bUseHighLowRatios", EditConditionHides))
+	//Reverse gear ratios if vehicle has changeable transmission system between high/low
 	TArray<FHighLowGearCombo> ReverseGearRatios;
 
-	UPROPERTY(EditAnywhere, meta = (EditCondition = "bUseAutomaticGears!=true&&!bUseHighLowRatios", EditConditionHides, DisplayName = "Forward Gear Ratios"))
-	//Forward gear ratios if vehicle does NOT have a changeable transmission system
+	UPROPERTY(EditAnywhere, meta = (EditCondition = "(vehicleTransmissionType==ETransmissionType::Manual || vehicleTransmissionType==ETransmissionType::Hybrid || vehicleTransmissionType==ETransmissionType::Automatic)&&!bUseHighLowRatios", EditConditionHides, DisplayName = "Forward Gear Ratios"))
+	//Forward gear ratios if vehicle has either Automatic/Hybrid transmission or Manual with changeable between high/low
 	TArray<FSingularGearCombo> ForwardGearRatiosSingular;
 
-	UPROPERTY(EditAnywhere, meta = (EditCondition = "bUseAutomaticGears!=true&&!bUseHighLowRatios", EditConditionHides, DisplayName = "Reverse Gear Ratios"))
-	//Reverse gear ratios if vehicle does NOT have a changeable transmission system
+	UPROPERTY(EditAnywhere, meta = (EditCondition = "(vehicleTransmissionType==ETransmissionType::Manual || vehicleTransmissionType==ETransmissionType::Hybrid || vehicleTransmissionType==ETransmissionType::Automatic)&&!bUseHighLowRatios", EditConditionHides, DisplayName = "Reverse Gear Ratios"))
+	//Reverse gear ratios if vehicle has either Automatic/Hybrid transmission or Manual with changeable between high/low
 	TArray<FSingularGearCombo> ReverseGearRatiosSingular;
 
-	UPROPERTY(EditAnywhere, meta = (EditCondition = "bUseAutomaticGears==true", EditConditionHides, DisplayName = "Forward Gear Ratios"))
-	//Forward gear ratios if vehicle has automatic transmission
-	TArray<float> ForwardGearRatiosAutomatic;
-
-	UPROPERTY(EditAnywhere, meta = (EditCondition = "bUseAutomaticGears==true", EditConditionHides, DisplayName = "Reverse Gear Ratios"))
-	//Reverse gear ratios if vehicle has automatic transmission
-	TArray<float> ReverseGearRatiosAutomatic;
-
-	UPROPERTY(EditAnywhere, meta = (EditCondition = "bUseAutomaticGears!=true"))
+	UPROPERTY(EditAnywhere, meta = (EditCondition = "vehicleTransmissionType==ETransmissionType::Manual"))
 	//Should vehicle stop immediately if no gas or clutch is pressed, or should it wait till minimum speed for current gear is reached?
 	bool instantStopOnNoGasOrClutch = false;
 
-	UPROPERTY(EditAnywhere, meta = (ClampMin = "0.0", UIMin = "0.0", EditCondition = "bUseAutomaticGears==true"))
+	UPROPERTY(EditAnywhere, meta = (ClampMin = "0.0", UIMin = "0.0", EditCondition = "(vehicleTransmissionType==ETransmissionType::Automatic || vehicleTransmissionType==ETransmissionType::Hybrid)"))
 	//Engine RPM at which gear up change ocurrs for automatic transmission
 	float ChangeUpRPM;
 
-	UPROPERTY(EditAnywhere, meta = (ClampMin = "0.0", UIMin = "0.0", EditCondition = "bUseAutomaticGears==true"))
+	UPROPERTY(EditAnywhere, meta = (ClampMin = "0.0", UIMin = "0.0", EditCondition = "(vehicleTransmissionType==ETransmissionType::Automatic || vehicleTransmissionType==ETransmissionType::Hybrid)"))
 	//Engine RPM at which gear down change ocurrs for automatic transmission
 	float ChangeDownRPM;
 
-	UPROPERTY(EditAnywhere, meta = (ClampMin = "0.0", UIMin = "0.0", EditCondition = "bUseAutomaticGears==true"))
+	UPROPERTY(EditAnywhere, meta = (ClampMin = "0.0", UIMin = "0.0", EditCondition = "(vehicleTransmissionType==ETransmissionType::Automatic || vehicleTransmissionType==ETransmissionType::Hybrid)"))
 	//Time it takes for gear change to occur in automatic transmission
 	float GearChangeTime;
 
@@ -566,8 +576,8 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleTransmissionConfig
 
 	int GetForwardGearCount()
 	{
-		if (bUseAutomaticGears)
-			return ForwardGearRatiosAutomatic.Num();
+		if (vehicleTransmissionType == ETransmissionType::Automatic || vehicleTransmissionType == ETransmissionType::Hybrid)
+			return ForwardGearRatiosSingular.Num();
 		else if (bUseHighLowRatios)
 			return ForwardGearRatios.Num();
 		else
@@ -577,32 +587,14 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleTransmissionConfig
 
 	void InitDefaults()
 	{
-		bUseAutomaticGears = false;
+		vehicleTransmissionType = ETransmissionType::Manual;
 		bUseAutoReverse = false;
-		bUseHighLowRatios = true;
+		bUseHighLowRatios = false;
 		FinalRatio = 3.08f;
-
-		ForwardGearRatios.Add(2.85f);
-		ForwardGearRatios.Add(2.02f);
-		ForwardGearRatios.Add(1.35f);
-		ForwardGearRatios.Add(1.0f);
-		ReverseGearRatios.Add(2.86f);
-
-		ForwardGearRatiosSingular.Add(2.85f);
-		ForwardGearRatiosSingular.Add(2.02f);
-		ForwardGearRatiosSingular.Add(1.35f);
-		ForwardGearRatiosSingular.Add(1.0f);
-		ReverseGearRatiosSingular.Add(2.86f);
-
-		ForwardGearRatiosAutomatic.Add(2.85f);
-		ForwardGearRatiosAutomatic.Add(2.02f);
-		ForwardGearRatiosAutomatic.Add(1.35f);
-		ForwardGearRatiosAutomatic.Add(1.0f);
-		ReverseGearRatiosAutomatic.Add(2.86f);
 
 		ChangeUpRPM = 4500.0f;
 		ChangeDownRPM = 2000.0f;
-		GearChangeTime = 0.4f;
+		GearChangeTime = 0.1f;
 
 		TransmissionEfficiency = 0.9f;
 	}
@@ -643,11 +635,11 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleTransmissionConfig
 	{
 		if (InGear > 0) // a forwards gear
 		{
-			return ForwardGearRatiosAutomatic[InGear - 1] * FinalRatio;
+			return ForwardGearRatiosSingular[InGear - 1].RatioSingular * FinalRatio;
 		}
 		else if (InGear < 0) // a reverse gear
 		{
-			return ReverseGearRatiosAutomatic[FMath::Abs(InGear) - 1] * FinalRatio * -1;
+			return ReverseGearRatiosSingular[FMath::Abs(InGear) - 1].RatioSingular * FinalRatio * -1;
 		}
 		else
 		{
@@ -657,26 +649,26 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleTransmissionConfig
 
 	float GetMinimumSpeedForGear(int gearNum, bool forwardRatios) const
 	{
-		float retVal = 0;
-		if (bUseAutomaticGears)
-			retVal =  0.0f;
+		float retVal = -1;
+		if (vehicleTransmissionType == ETransmissionType::Automatic)
+			retVal =  -1;
 		else if (bUseHighLowRatios)
 		{
 			if (forwardRatios && (gearNum > 0 && gearNum <= ForwardGearRatios.Num()))
-				retVal =  ForwardGearRatios[gearNum-1].MinimumSpeed / transferCaseModifer > ForwardGearRatios[gearNum - 1].MinimumSpeed? ForwardGearRatios[gearNum - 1].MinimumSpeed : ForwardGearRatios[gearNum - 1].MinimumSpeed / transferCaseModifer;
+				retVal = ForwardGearRatios[gearNum - 1].MinimumSpeed / transferCaseModifer > ForwardGearRatios[gearNum - 1].MinimumSpeed ? ForwardGearRatios[gearNum - 1].MinimumSpeed : ForwardGearRatios[gearNum - 1].MinimumSpeed /*/ transferCaseModifer*/;
 			else if (gearNum > 0 && gearNum <= ReverseGearRatios.Num())
-				retVal =  ReverseGearRatios[gearNum - 1].MinimumSpeed / transferCaseModifer > ReverseGearRatios[gearNum - 1].MinimumSpeed? ReverseGearRatios[gearNum - 1].MinimumSpeed : ReverseGearRatios[gearNum - 1].MinimumSpeed / transferCaseModifer;
+				retVal = ReverseGearRatios[gearNum - 1].MinimumSpeed / transferCaseModifer > ReverseGearRatios[gearNum - 1].MinimumSpeed ? ReverseGearRatios[gearNum - 1].MinimumSpeed : ReverseGearRatios[gearNum - 1].MinimumSpeed /*/ transferCaseModifer*/;
 			else
-				retVal =  0;
+				retVal =  -1;
 		}
 		else
 		{
-			if (forwardRatios && (gearNum > 0 && gearNum < ForwardGearRatiosSingular.Num()))
-				retVal = ForwardGearRatiosSingular[gearNum - 1].MinimumSpeed / transferCaseModifer > ForwardGearRatiosSingular[gearNum - 1].MinimumSpeed ? ForwardGearRatiosSingular[gearNum - 1].MinimumSpeed : ForwardGearRatiosSingular[gearNum - 1].MinimumSpeed / transferCaseModifer;
-			else if (gearNum > 0 && gearNum < ReverseGearRatiosSingular.Num())
-				retVal = ReverseGearRatiosSingular[gearNum - 1].MinimumSpeed / transferCaseModifer > ReverseGearRatiosSingular[gearNum - 1].MinimumSpeed ? ReverseGearRatiosSingular[gearNum - 1].MinimumSpeed : ReverseGearRatiosSingular[gearNum - 1].MinimumSpeed / transferCaseModifer;
+			if (forwardRatios && (gearNum > 0 && gearNum <= ForwardGearRatiosSingular.Num()))
+				retVal = ForwardGearRatiosSingular[gearNum - 1].MinimumSpeed / transferCaseModifer > ForwardGearRatiosSingular[gearNum - 1].MinimumSpeed ? ForwardGearRatiosSingular[gearNum - 1].MinimumSpeed : ForwardGearRatiosSingular[gearNum - 1].MinimumSpeed /*/ transferCaseModifer*/;
+			else if (gearNum > 0 && gearNum <= ReverseGearRatiosSingular.Num())
+				retVal = ReverseGearRatiosSingular[gearNum - 1].MinimumSpeed / transferCaseModifer > ReverseGearRatiosSingular[gearNum - 1].MinimumSpeed ? ReverseGearRatiosSingular[gearNum - 1].MinimumSpeed : ReverseGearRatiosSingular[gearNum - 1].MinimumSpeed /*/ transferCaseModifer*/;
 			else
-				retVal =  0;
+				retVal =  -1;
 		}
 	
 		return retVal;
@@ -684,26 +676,26 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleTransmissionConfig
 
 	float GetMaximumSpeedForGear(int gearNum, bool forwardRatios) const
 	{
-		float retVal = 0;
-		if (bUseAutomaticGears)
-			retVal = 0.0f;
+		float retVal = -1;
+		if (vehicleTransmissionType==ETransmissionType::Automatic)
+			retVal = -1;
 		else if (bUseHighLowRatios)
 		{
 			if (forwardRatios && (gearNum > 0 && gearNum <= ForwardGearRatios.Num()))
-				retVal = ForwardGearRatios[gearNum - 1].MaximumSpeed / transferCaseModifer > ForwardGearRatios[gearNum - 1].MaximumSpeed ? ForwardGearRatios[gearNum - 1].MaximumSpeed : ForwardGearRatios[gearNum - 1].MaximumSpeed / transferCaseModifer;
+				retVal = ForwardGearRatios[gearNum - 1].MaximumSpeed / transferCaseModifer > ForwardGearRatios[gearNum - 1].MaximumSpeed ? ForwardGearRatios[gearNum - 1].MaximumSpeed : ForwardGearRatios[gearNum - 1].MaximumSpeed /*/ transferCaseModifer*/;
 			else if (gearNum > 0 && gearNum <= ReverseGearRatios.Num())
-				retVal = ReverseGearRatios[gearNum - 1].MaximumSpeed / transferCaseModifer > ReverseGearRatios[gearNum - 1].MaximumSpeed ? ReverseGearRatios[gearNum - 1].MaximumSpeed : ReverseGearRatios[gearNum - 1].MaximumSpeed / transferCaseModifer;
+				retVal = ReverseGearRatios[gearNum - 1].MaximumSpeed / transferCaseModifer > ReverseGearRatios[gearNum - 1].MaximumSpeed ? ReverseGearRatios[gearNum - 1].MaximumSpeed : ReverseGearRatios[gearNum - 1].MaximumSpeed /*/ transferCaseModifer*/;
 			else
-				retVal = 0;
+				retVal = -1;
 		}
 		else
 		{
-			if (forwardRatios && (gearNum > 0 && gearNum < ForwardGearRatiosSingular.Num()))
-				retVal = ForwardGearRatiosSingular[gearNum - 1].MaximumSpeed / transferCaseModifer > ForwardGearRatiosSingular[gearNum - 1].MaximumSpeed ? ForwardGearRatiosSingular[gearNum - 1].MaximumSpeed : ForwardGearRatiosSingular[gearNum - 1].MaximumSpeed / transferCaseModifer;
-			else if (gearNum > 0 && gearNum < ReverseGearRatiosSingular.Num())
-				retVal = ReverseGearRatiosSingular[gearNum - 1].MaximumSpeed / transferCaseModifer > ReverseGearRatiosSingular[gearNum - 1].MaximumSpeed ? ReverseGearRatiosSingular[gearNum - 1].MaximumSpeed : ReverseGearRatiosSingular[gearNum - 1].MaximumSpeed / transferCaseModifer;
+			if (forwardRatios && (gearNum > 0 && gearNum <= ForwardGearRatiosSingular.Num()))
+				retVal = ForwardGearRatiosSingular[gearNum - 1].MaximumSpeed / transferCaseModifer > ForwardGearRatiosSingular[gearNum - 1].MaximumSpeed ? ForwardGearRatiosSingular[gearNum - 1].MaximumSpeed : ForwardGearRatiosSingular[gearNum - 1].MaximumSpeed /*/ transferCaseModifer*/;
+			else if (gearNum > 0 && gearNum <= ReverseGearRatiosSingular.Num())
+				retVal = ReverseGearRatiosSingular[gearNum - 1].MaximumSpeed / transferCaseModifer > ReverseGearRatiosSingular[gearNum - 1].MaximumSpeed ? ReverseGearRatiosSingular[gearNum - 1].MaximumSpeed : ReverseGearRatiosSingular[gearNum - 1].MaximumSpeed /*/ transferCaseModifer*/;
 			else
-				retVal = 0;
+				retVal = -1;
 		}
 
 		return retVal;
@@ -718,13 +710,42 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleTransmissionConfig
 	{
 		transferCaseModifer = inRatio;
 	}
+
+	bool IsCurrentTransmissionModeManual() 
+	{
+		if (vehicleTransmissionType == ETransmissionType::Automatic)
+			return false;
+		else if (vehicleTransmissionType == ETransmissionType::Manual)
+			return true;
+		else return isVehicleInManualMode;
+	}
+
+	bool SetTransmissionMode(bool useManual)
+	{
+		if (vehicleTransmissionType == ETransmissionType::Hybrid)
+		{
+			isVehicleInManualMode = useManual;
+			return true;
+		}
+		else return false;
+	}	
+	
 private:
 
-	float transferCaseModifer = .917;
+	bool isVehicleInManualMode = false;
+
+	float transferCaseModifer;
 
 	void FillTransmissionSetup()
 	{
-		PTransmissionConfig.TransmissionType = this->bUseAutomaticGears ? Chaos::ETransmissionType::Automatic : Chaos::ETransmissionType::Manual;
+		if (vehicleTransmissionType == ETransmissionType::Automatic || vehicleTransmissionType == ETransmissionType::Hybrid)
+		{
+			PTransmissionConfig.TransmissionType = Chaos::ETransmissionType::Automatic;
+		}
+		else
+		{
+			PTransmissionConfig.TransmissionType = Chaos::ETransmissionType::Manual;
+		}
 		PTransmissionConfig.AutoReverse = this->bUseAutoReverse;
 		PTransmissionConfig.ChangeUpRPM = this->ChangeUpRPM;
 		PTransmissionConfig.ChangeDownRPM = this->ChangeDownRPM;
@@ -733,16 +754,16 @@ private:
 		PTransmissionConfig.ForwardRatios.Reset();
 		PTransmissionConfig.TransmissionEfficiency = this->TransmissionEfficiency;
 
-		if (bUseAutomaticGears)
+		if ((vehicleTransmissionType == ETransmissionType::Automatic || vehicleTransmissionType == ETransmissionType::Hybrid))
 		{
-			for (float Ratio : ForwardGearRatiosAutomatic)
+			for (FSingularGearCombo gearInfo : ForwardGearRatiosSingular)
 			{
-				PTransmissionConfig.ForwardRatios.Add(Ratio);
+				PTransmissionConfig.ForwardRatios.Add(gearInfo.RatioSingular);
 			}
 			PTransmissionConfig.ReverseRatios.Reset();
-			for (float Ratio : ReverseGearRatiosAutomatic)
+			for (FSingularGearCombo gearInfo : ReverseGearRatiosSingular)
 			{
-				PTransmissionConfig.ReverseRatios.Add(Ratio);
+				PTransmissionConfig.ReverseRatios.Add(gearInfo.RatioSingular);
 			}
 
 
@@ -772,12 +793,12 @@ private:
 			{
 				for (FSingularGearCombo gearInfo : ForwardGearRatiosSingular)
 				{
-					PTransmissionConfig.ForwardRatios.Add(gearInfo.Ratio);
+					PTransmissionConfig.ForwardRatios.Add(gearInfo.RatioSingular);
 				}
 				PTransmissionConfig.ReverseRatios.Reset();
 				for (FSingularGearCombo gearInfo : ReverseGearRatiosSingular)
 				{
-					PTransmissionConfig.ReverseRatios.Add(gearInfo.Ratio);
+					PTransmissionConfig.ReverseRatios.Add(gearInfo.RatioSingular);
 				}
 			}
 		}
@@ -795,6 +816,12 @@ private:
 
 	Chaos::FSimpleTransmissionConfig PTransmissionConfig;
 
+public:
+
+	FDynamicVehicleTransmissionConfig(const ETransmissionType& vehicleTransmissionType, bool bUseAutoReverse, bool bUseHighLowRatios, float FinalRatio, const TArray<FHighLowGearCombo>& ForwardGearRatios, const TArray<FHighLowGearCombo>& ReverseGearRatios, const TArray<FSingularGearCombo>& ForwardGearRatiosSingular, const TArray<FSingularGearCombo>& ReverseGearRatiosSingular, const TArray<float>& ForwardGearRatiosAutomatic, const TArray<float>& ReverseGearRatiosAutomatic, bool instantStopOnNoGasOrClutch, float ChangeUpRPM, float ChangeDownRPM, float GearChangeTime, float TransmissionEfficiency, float transferCaseModifer, const Chaos::FSimpleTransmissionConfig& PTransmissionConfig)
+		: vehicleTransmissionType(vehicleTransmissionType), bUseAutoReverse(bUseAutoReverse), bUseHighLowRatios(bUseHighLowRatios), FinalRatio(FinalRatio), ForwardGearRatios(ForwardGearRatios), ReverseGearRatios(ReverseGearRatios), ForwardGearRatiosSingular(ForwardGearRatiosSingular), ReverseGearRatiosSingular(ReverseGearRatiosSingular), instantStopOnNoGasOrClutch(instantStopOnNoGasOrClutch), ChangeUpRPM(ChangeUpRPM), ChangeDownRPM(ChangeDownRPM), GearChangeTime(GearChangeTime), TransmissionEfficiency(TransmissionEfficiency), transferCaseModifer(transferCaseModifer), PTransmissionConfig(PTransmissionConfig)
+	{
+	}
 };
 
 /** Single angle : both wheels steer by the same amount
@@ -985,32 +1012,33 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicFunctionalities
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Changeable Differential Systems?", AllowPrivateAccess = "true"))
 	//Does Vehicle have capability to change between the 2 differentials?
 	bool vehicleHasMultipleDifferentials = true;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Changeable Transmission System?", AllowPrivateAccess = "true", EditCondition = "isVehicleAutomaticTransmission"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Changeable Transmission System?", AllowPrivateAccess = "true"))
 	//Does Vehicle have high and low gear ratios for each gear? 
 	bool vehicleHasHighLowGears = true;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Manual Fuel Handle?", AllowPrivateAccess = "true", EditCondition = "isVehicleAutomaticTransmission"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Manual Fuel Handle?", AllowPrivateAccess = "true"))
 	//Does Vehicle have high and low gear ratios for each gear? 
 	bool vehicleHasManualFuelHandle = true;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Transfer Case?", AllowPrivateAccess = "true"))
 	//Does Vehicle have specific transfer case with differing ratios?
 	bool vehicleHasTransferCase = true;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Turbo Mode?", AllowPrivateAccess = "true"))
+	//Does the Vehicle have a turbo mode? Turbo Mode increases Drive Torque (affectively acceleration) on Wheels by a set factor for a set time which can be edited in default values.
+	bool vehicleHasTurboMode = false;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle Can Start in Gear?", AllowPrivateAccess = "true"))
 	//Allow vehicle to start if not in neutral (but clutch pressed). Default is true
 	bool vehicleCanStartWithoutNeutralGear = true;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle Should Slide on Slopes?", AllowPrivateAccess = "true"))
 	//Should vehicle auto slide on slopes or slow down to rest while on slope?
 	bool vehicleShouldSlideOnSlope = true;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Break Needed for Automatic Mode Shifts?", AllowPrivateAccess = "true"))
+	//Does the vehicle need the brakes to be pressed in order to change between Nuetral, Reverse and Drive in Automatic and Hybrid Modes
+	bool autoVehicleNeedsBreakPress = false;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Should Engine Stall on Critical Action Mistakes?", AllowPrivateAccess = "true"))
+	//There are certain action mistakes defined in EActionErrorReason enum. Should Engine stall when a critical mistake is made?
+	bool shouldEngineStallOnCriticalMistakes = false;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities|Non Functional Aspects", meta = (DisplayName = "Vehicle has Non Functional Aspects?", AllowPrivateAccess = "true"))
 	//Does Vehicle have non funcitonal aspects? (windscreen wipers etc)
 	bool vehicleHasNonFunctionalAspects = true;
-
-	void SetTransmissionNature(bool isAutomatic = true)
-	{
-		isVehicleAutomaticTransmission = !isAutomatic;
-	}
-private:
-	UPROPERTY()
-	bool isVehicleAutomaticTransmission = false;
 };
 
 USTRUCT(BlueprintType)
@@ -1114,6 +1142,22 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicSimulationData
 	UPROPERTY()
 	bool isDownShifting = false;
 
+	UPROPERTY()
+	int maxGearLock = 0;
+
+	UPROPERTY()
+	float driveTorqueIncreaseFactor = 1;
+
+	void ModifyDriveTorqueFactor(float newFactor)
+	{
+		driveTorqueIncreaseFactor = newFactor;
+	}
+
+	void SetMaxGearLock(int maxGear)
+	{
+		maxGearLock = maxGear;
+	}
+
 	void FillData(float intake, bool isdownshift, float currentSpeed = 0, float currentTransmissionRatioInput = 1, bool isThrottle = false, bool isBreakAssist = false)
 	{
 		isFilled = true;
@@ -1147,6 +1191,34 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicSimulationData
 		transmissionData = transmissionConfig;
 		vehicleFunctionalities = functionalityConfig;
 
+	}
+
+	int GetActiveGear(int internalGear, bool forward)
+	{
+		int retVal = 0;
+		if (forward)
+		{
+			if (transmissionData.bUseHighLowRatios)
+			{
+				retVal = (internalGear + 1) / 2;
+			}
+			else
+			{
+				retVal = internalGear;
+			}
+		}
+		else
+		{
+			if (transmissionData.bUseHighLowRatios)
+			{
+				retVal = (internalGear - 1) / 2;
+			}
+			else
+			{
+				retVal = internalGear;
+			}
+		}
+		return retVal;
 	}
 
 };

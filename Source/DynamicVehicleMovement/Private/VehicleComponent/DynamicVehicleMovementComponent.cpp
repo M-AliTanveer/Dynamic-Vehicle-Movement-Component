@@ -749,12 +749,12 @@ void UDynamicVehicleSimulation::ApplyInput(const FControlInputs& ControlInputs, 
 		{
 			if (dataImpactingSimulation.isFilled)
 			{
-				if (ModifiedInputs.ThrottleInput == 0 && targetRPM_BasedOnFuel != dataImpactingSimulation.engineData.EngineIdleRPM)
+				/*if (ModifiedInputs.ThrottleInput == 0 && targetRPM_BasedOnFuel != dataImpactingSimulation.engineData.EngineIdleRPM && targetRPM_BasedOnFuel!=0)
 				{
 					PEngine.SetThrottle(1);
 					ModifiedInputs.ThrottleInput = 1;
 				}
-				else
+				else*/
 					PEngine.SetThrottle(ModifiedInputs.ThrottleInput * ModifiedInputs.ThrottleInput);
 
 			}
@@ -864,38 +864,29 @@ void UDynamicVehicleSimulation::ProcessMechanicalSimulation(float DeltaTime)
 		float WheelSpeedRPM = FMath::Abs(PTransmission.GetEngineRPMFromWheelRPM(WheelRPM));
 		float targetRPM = dataImpactingSimulation.engineData.EngineIdleRPM, maxAllowableRPM = dataImpactingSimulation.engineData.MaxRPM;
 		//Adjust RPM based on wheel RPM and fuel intake
-		if (dataImpactingSimulation.isFilled)
+		if (dataImpactingSimulation.isFilled )
 		{
 			bool bypassMaxCheck = false;
 			float engineMaxRPM = dataImpactingSimulation.engineData.MaxRPM;
 
-			maxAllowableRPM = GetCalculatedRPM_BasedOnFuelIntake();
+			maxAllowableRPM = GetCalculatedRPM(WheelRPM);
 			targetRPM_BasedOnFuel = maxAllowableRPM;
 	
 			if (PTransmission.GetEngineRPMFromWheelRPM(WheelRPM) >= dataImpactingSimulation.engineData.EngineIdleRPM)
 			{
 				if (dataImpactingSimulation.isDownShifting || !dataImpactingSimulation.isThrottleActive)
 				{
-					targetRPM = PTransmission.GetEngineRPMFromWheelRPM(WheelRPM);
-					UE_LOG(LogTemp, Warning, TEXT("ProcessMechanicalSimulation-> LINE 884"));
-
 					bypassMaxCheck = true;
 				}
-				else
-				{
-					targetRPM = FMath::Min(targetRPM_BasedOnFuel, PTransmission.GetEngineRPMFromWheelRPM(WheelRPM));
-					UE_LOG(LogTemp, Warning, TEXT("ProcessMechanicalSimulation-> LINE 891"));
-
-				}
 			}
-			else
-				targetRPM = targetRPM_BasedOnFuel;
+			targetRPM = targetRPM_BasedOnFuel;
+			
 
 			if (maxAllowableRPM == dataImpactingSimulation.engineData.MaxRPM)
 				maxAllowableRPM = maxAllowableRPM - 1;
 			if (!bypassMaxCheck)
 			{
-				float maxRPMChangeRate = 200;
+				float maxRPMChangeRate = dataImpactingSimulation.engineData.RPM_IncreasRate;
 				float currentRPM = PEngine.GetEngineRPM();
 				float rpmDifference = targetRPM - currentRPM;
 
@@ -933,7 +924,7 @@ void UDynamicVehicleSimulation::ProcessMechanicalSimulation(float DeltaTime)
 		PTransmission.Simulate(DeltaTime);
 		
 		float TransmissionTorque;
-		if (dataImpactingSimulation.isFilled)
+		if (dataImpactingSimulation.isFilled && false)
 		{
 			if (PTransmission.GetCurrentGear() != 0 && PEngine.GetEngineTorque() == 0)
 			{
@@ -959,74 +950,11 @@ void UDynamicVehicleSimulation::ProcessMechanicalSimulation(float DeltaTime)
 			auto& PWheel = PVehicle->Wheels[WheelIdx];
 			if (PWheel.Setup().EngineEnabled)
 			{
+				float modificationFactor = 1;
 				if (dataImpactingSimulation.isFilled)
-				{
-					float allowedSpeed = BIG_NUMBER;
-					float clampValueRPM = targetRPM == maxAllowableRPM ? targetRPM : maxAllowableRPM;
-
-					if (PTransmission.GetCurrentGear() > 0)
-					{
-						float convertedGear = (PTransmission.GetCurrentGear() + 1) / 2 - 1;
-						float maxSpeedForGear = dataImpactingSimulation.transmissionData.GetMaximumSpeedForGear(convertedGear, true);
-						bool hasMaxSpeedData = maxSpeedForGear != -1;
-
-						if (hasMaxSpeedData)
-						{
-							allowedSpeed = UKismetMathLibrary::MapRangeClamped(clampValueRPM, dataImpactingSimulation.engineData.EngineIdleRPM, dataImpactingSimulation.engineData.MaxRPM,
-								0, dataImpactingSimulation.transmissionData.GetMaximumSpeedForGear(convertedGear, true));
-						}
-
-						if (dataImpactingSimulation.vehicleCurrentSpeed > allowedSpeed && hasMaxSpeedData)
-						{
-							PWheel.SetDriveTorque(0.f);
-						}
-						else
-						{
-							//UE_LOG(LogTemp, Log, TEXT("Setting drive torque : %s"), *FString::SanitizeFloat(TorqueMToCm(TransmissionTorque) * PWheel.Setup().TorqueRatio));
-							float tempValue = TorqueMToCm(TransmissionTorque) * PWheel.Setup().TorqueRatio * dataImpactingSimulation.currentTransmissionRatio;
-							PWheel.SetDriveTorque(tempValue);
-							//UE_LOG(LogTemp, Log, TEXT("drive torque : %s"), *FString::SanitizeFloat(PWheel.GetDriveTorque()));
-
-						}
-					}
-					else if (PTransmission.GetCurrentGear() == 0)
-					{
-						TransmissionTorque = 0.f;
-						allowedSpeed = 0;
-						PWheel.SetDriveTorque(0.f);
-
-					}
-					else
-					{
-						float convertedGear = (PTransmission.GetCurrentGear() - 1) / 2 + 1;
-						bool hasMaxSpeedData = dataImpactingSimulation.transmissionData.GetMaximumSpeedForGear(convertedGear, false) != -1;
-						if (hasMaxSpeedData)
-						{
-							allowedSpeed = UKismetMathLibrary::MapRangeClamped(clampValueRPM, dataImpactingSimulation.engineData.EngineIdleRPM, dataImpactingSimulation.engineData.MaxRPM,
-								0, dataImpactingSimulation.transmissionData.GetMaximumSpeedForGear(convertedGear, false));
-						}
-
-						if (dataImpactingSimulation.vehicleCurrentSpeed > allowedSpeed && hasMaxSpeedData)
-						{
-							PWheel.SetDriveTorque(0.f);
-
-						}
-						else
-						{
-							float tempValue = TorqueMToCm(TransmissionTorque) * PWheel.Setup().TorqueRatio * dataImpactingSimulation.currentTransmissionRatio;
-							PWheel.SetDriveTorque(tempValue);
-						}
-
-
-					}
-					//UE_LOG(LogTemp, Log, TEXT("Current Speed: %s , Allowed Speed : %s"), *FString::SanitizeFloat(dataImpactingSimulation.vehicleCurrentSpeed),*FString::SanitizeFloat(allowedSpeed));
-
-				}
-				else
-				{
-					PWheel.SetDriveTorque(TorqueMToCm(TransmissionTorque)* PWheel.Setup().TorqueRatio);
-				}
-
+					modificationFactor = dataImpactingSimulation.driveTorqueIncreaseFactor;
+				PWheel.SetDriveTorque(TorqueMToCm(TransmissionTorque)* PWheel.Setup().TorqueRatio * modificationFactor);
+				
 			}
 			else
 			{
@@ -1197,19 +1125,41 @@ float UDynamicVehicleSimulation::GetRelativeEngineRPM_FromSpeed(float currentSpe
 
 }
 
-float UDynamicVehicleSimulation::GetCalculatedRPM_BasedOnFuelIntake()
+float UDynamicVehicleSimulation::GetCalculatedRPM(float WheelRPM)
 {
-	float RPM = 0;
+	float finalRPM = 0;
+	auto& PTransmission = PVehicle->GetTransmission();
 	if (dataImpactingSimulation.isFilled)
 	{
-		RPM = UKismetMathLibrary::MapRangeClamped(dataImpactingSimulation.netFuelIntakeValue, dataImpactingSimulation.netFuelIntakeIdleRPMRequirement, dataImpactingSimulation.netFuelIntakeMaxRange,
-			dataImpactingSimulation.engineData.EngineIdleRPM, dataImpactingSimulation.engineData.MaxRPM);
+		if (dataImpactingSimulation.engineData.RPM_DependsOnFuelInput)
+		{
+			finalRPM = UKismetMathLibrary::MapRangeClamped(dataImpactingSimulation.netFuelIntakeValue, dataImpactingSimulation.netFuelIntakeIdleRPMRequirement, dataImpactingSimulation.netFuelIntakeMaxRange,
+															dataImpactingSimulation.engineData.EngineIdleRPM, dataImpactingSimulation.engineData.MaxRPM);
+
+			
+			float RPM2 =FMath::Abs( PTransmission.GetEngineRPMFromWheelRPM(WheelRPM));
+
+			finalRPM = FMath::Min(finalRPM, RPM2);
+		}
+		else
+		{
+			finalRPM = PTransmission.GetEngineRPMFromWheelRPM(WheelRPM);
+		}
+
+		int transmissionGear = PTransmission.GetCurrentGear();
+		int convertedGear = dataImpactingSimulation.GetActiveGear(transmissionGear, true);
+		if (transmissionGear > 0 && convertedGear >= dataImpactingSimulation.maxGearLock)
+		{
+			finalRPM = FMath::Min(finalRPM, dataImpactingSimulation.transmissionData.ChangeUpRPM - 2);
+		}
 	}
 	else
 	{
-		RPM = 0;
+		finalRPM = PTransmission.GetEngineRPMFromWheelRPM(WheelRPM);
 	}
-	return RPM;
+
+	return FMath::Clamp(finalRPM, dataImpactingSimulation.engineData.EngineIdleRPM, dataImpactingSimulation.engineData.MaxRPM);
+	
 }
 
 void UDynamicVehicleSimulation::FillOutputState(FChaosVehicleAsyncOutput& Output)
@@ -1449,6 +1399,8 @@ void UDynamicVehicleMovementComponent::CreateVehicle()
 		}
 	}
 
+	TransmissionSetup.SetTransferCaseModifier(transferCaseConfig.GetTransferCaseRatio());
+
 }
 
 void UDynamicVehicleMovementComponent::OnDestroyPhysicsState()
@@ -1616,6 +1568,8 @@ void UDynamicVehicleMovementComponent::SetupVehicle(TUniquePtr<Chaos::FSimpleWhe
 	}
 
 	RecalculateAxles();
+
+	TransmissionSetup.SetTransferCaseModifier(transferCaseConfig.GetTransferCaseRatio());
 
 	// setup axles in PVehicle
 	for (auto& Axle : AxleToWheelMap)
@@ -1909,422 +1863,6 @@ void UDynamicVehicleMovementComponent::Update(float DeltaTime)
 		}
 	}
 }
-
-
-// Debug
-//void UDynamicVehicleMovementComponent::DrawDebug(UCanvas* Canvas, float& YL, float& YPos)
-//{
-//	using namespace Chaos;
-//
-//	ensure(IsInGameThread());
-//
-//#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
-//
-//	Super::DrawDebug(Canvas, YL, YPos);
-//
-//	FBodyInstance* TargetInstance = GetBodyInstance();
-//
-//	// #todo: is this rendering multiple times in multiplayer
-//	if (TargetInstance == nullptr)
-//	{
-//		return;
-//	}
-//
-//	float ForwardSpeedMPH = CmSToMPH(GetForwardSpeed());
-//
-//	// always draw this even on (DebugPage == EDynamicDebugPages::BasicPage)
-//	if (bMechanicalSimEnabled)
-//	{
-//		UFont* RenderFont = GEngine->GetLargeFont();
-//		Canvas->SetDrawColor(FColor::Yellow);
-//
-//		// draw MPH, RPM and current gear
-//		float X, Y;
-//		Canvas->GetCenter(X, Y);
-//		float YLine = Y * 2.f - 50.f;
-//		float Scaling = 2.f;
-//		Canvas->DrawText(RenderFont, FString::Printf(TEXT("%d mph"), (int)ForwardSpeedMPH), X - 100, YLine, Scaling, Scaling);
-//		Canvas->DrawText(RenderFont, FString::Printf(TEXT("[%d]"), (int)PVehicleOutput->CurrentGear), X, YLine, Scaling, Scaling);
-//		Canvas->DrawText(RenderFont, FString::Printf(TEXT("%d rpm"), (int)PVehicleOutput->EngineRPM), X + 50, YLine, Scaling, Scaling);
-//
-//		FVector2D DialPos(X + 10, YLine - 40);
-//		float DialRadius = 50;
-//		DrawDial(Canvas, DialPos, DialRadius, PVehicleOutput->EngineRPM, EngineSetup.MaxRPM);
-//
-//	}
-//
-//	UFont* RenderFont = GEngine->GetMediumFont();
-//	// draw drive data
-//	{
-//		Canvas->SetDrawColor(FColor::White);
-//		YPos += 16;
-//
-//		if (bMechanicalSimEnabled)
-//		{
-//			YPos += Canvas->DrawText(RenderFont, FString::Printf(TEXT("RPM: %.1f (ChangeUp RPM %.0f, ChangeDown RPM %.0f)")
-//				, GetEngineRotationSpeed()
-//				, TransmissionSetup.ChangeUpRPM
-//				, TransmissionSetup.ChangeDownRPM), 4, YPos);
-//
-//			YPos += Canvas->DrawText(RenderFont, FString::Printf(TEXT("Gear: %d (Target %d)")
-//				, GetCurrentGear(), GetTargetGear()), 4, YPos);
-//		}
-//		//YPos += Canvas->DrawText(RenderFont, FString::Printf(TEXT("Drag: %.1f"), DebugDragMagnitude), 4, YPos);
-//
-//		YPos += 16;
-//		for (int i = 0; i < PVehicleOutput->Wheels.Num(); i++)
-//		{
-//			YPos += Canvas->DrawText(RenderFont, FString::Printf(TEXT("WheelLoad: [%d] %1.f N"), i, CmToM(WheelStatus[i].SpringForce)), 4, YPos);
-//		}
-//
-//		YPos += 16;
-//		for (int i = 0; i < PVehicleOutput->Wheels.Num(); i++)
-//		{
-//			if (WheelStatus[i].PhysMaterial.IsValid())
-//			{
-//				YPos += Canvas->DrawText(RenderFont, FString::Printf(TEXT("SurfaceFriction: [%d] %.2f"), i, WheelStatus[i].PhysMaterial->Friction), 4, YPos);
-//			}
-//		}
-//
-//	}
-//
-//	if (DebugPage == EDynamicDebugPages::PerformancePage)
-//	{
-//		if (DynWheeledVehicleDebugParams.ResetPerformanceMeasurements)
-//		{
-//			DynWheeledVehicleDebugParams.ResetPerformanceMeasurements = false;
-//			PerformanceMeasure.ResetAll();
-//		}
-//
-//		PerformanceMeasure.Enable();
-//
-//		YPos += 16;
-//		for (int I = 0; I < PerformanceMeasure.GetNumMeasures(); I++)
-//		{
-//			const FTimeAndDistanceMeasure& Measure = PerformanceMeasure.GetMeasure(I);
-//
-//			YPos += Canvas->DrawText(RenderFont, FString::Printf(TEXT("%s"), *Measure.ToString()), 4, YPos);
-//		}
-//	}
-//
-//	// draw wheel layout
-//	if (DebugPage == EDynamicDebugPages::FrictionPage)
-//	{
-//		FVector2D MaxSize = GetWheelLayoutDimensions();
-//
-//		// Draw a top down representation of the wheels in position, with the direction forces being shown
-//		for (int32 WheelIdx = 0; WheelIdx < (useSystem1ForDifferential?(WheelSetupsForDifferentialSystem1):(WheelSetupsForDifferentialSystem2)).Num(); ++WheelIdx)
-//		{
-//
-//			auto& PWheel = PVehicleOutput->Wheels[WheelIdx];
-//			//			FVector Forces = PWheel.GetForceFromFriction();
-//			//
-//			//			FDynamicWheelSetup& WheelSetup = (useSystem1ForDifferential?(WheelSetupsForDifferentialSystem1):(WheelSetupsForDifferentialSystem2))[WheelIdx];
-//			//			UDynamicWheel* Wheel = WheelSetup.WheelClass.GetDefaultObject();
-//			//			check(Wheel);
-//			//			UPhysicalMaterial* ContactMat = Wheel->GetContactSurfaceMaterial();
-//			//
-//			//			const FVector WheelOffset = GetWheelRestingPosition(WheelSetup);
-//			//
-//			//			float DrawScale = 300;
-//			//			FVector2D CentreDrawPosition(350, 400);
-//			//			FVector2D WheelDrawPosition(WheelOffset.Y, -WheelOffset.X);
-//			//			WheelDrawPosition *= DrawScale;
-//			//			WheelDrawPosition /= MaxSize.X;
-//			//			WheelDrawPosition += CentreDrawPosition;
-//			//
-//			//			FVector2D WheelDimensions(Wheel->WheelWidth, Wheel->WheelRadius * 2.0f);
-//			//			FVector2D HalfDimensions = WheelDimensions * 0.5f;
-//			//			FCanvasBoxItem BoxItem(WheelDrawPosition - HalfDimensions, WheelDimensions);
-//			//			BoxItem.SetColor(FColor::Green);
-//			//			Canvas->DrawItem(BoxItem);
-//			//
-//			//			float VisualScaling = 0.0001f;
-//			//			FVector2D Force2D(Forces.Y * VisualScaling, -Forces.X * VisualScaling);
-//			//			DrawLine2D(Canvas, WheelDrawPosition, WheelDrawPosition + Force2D, FColor::Red);
-//			//
-//			//			float SlipAngle = FMath::Abs(PWheel.GetSlipAngle());
-//			//			float X = FMath::Sin(SlipAngle) * 50.f;
-//			//			float Y = FMath::Cos(SlipAngle) * 50.f;
-//			//
-//			//			int Xpos = WheelDrawPosition.X + 20;
-//			//			int Ypos = WheelDrawPosition.Y - 75.f;
-//			//			DrawLine2D(Canvas, WheelDrawPosition, WheelDrawPosition - FVector2D(X, Y), FColor::White);
-//			//			Ypos += Canvas->DrawText(RenderFont, FString::Printf(TEXT("Slip Angle : %d %"), (int)RadToDeg(SlipAngle)), Xpos, Ypos);
-//			//
-//			//			Ypos += Canvas->DrawText(RenderFont, FString::Printf(TEXT("AccelT : %.1f"), PWheel.GetDriveTorque()), Xpos, Ypos);
-//			//			Ypos += Canvas->DrawText(RenderFont, FString::Printf(TEXT("BrakeT : %.1f"), PWheel.GetBrakeTorque()), Xpos, Ypos);
-//			//
-//			//			Ypos += Canvas->DrawText(RenderFont, FString::Printf(TEXT("Omega : %.2f"), PWheel.GetAngularVelocity()), Xpos, Ypos);
-//			//
-//			//			Ypos += Canvas->DrawText(RenderFont, FString::Printf(TEXT("GroundV : %.1f"), PWheel.GetRoadSpeed()), Xpos, Ypos);
-//			//			Ypos += Canvas->DrawText(RenderFont, FString::Printf(TEXT("WheelV : %.1f"), PWheel.GetWheelGroundSpeed()), Xpos, Ypos);
-//			////			Ypos += Canvas->DrawText(RenderFont, FString::Printf(TEXT("Sx : %.2f"), PWheel.GetNormalizedLongitudinalSlip()), Xpos, Ypos);
-//			//			Ypos += Canvas->DrawText(RenderFont, FString::Printf(TEXT("Long Ad Limit : %.2f"), PWheel.LongitudinalAdhesiveLimit), Xpos, Ypos);
-//			//			Ypos += Canvas->DrawText(RenderFont, FString::Printf(TEXT("Lat Ad Limit : %.2f"), PWheel.LateralAdhesiveLimit), Xpos, Ypos);
-//			//			Ypos += Canvas->DrawText(RenderFont, FString::Printf(TEXT("Side Slip : %.2f"), PWheel.SideSlipModifier), Xpos, Ypos);
-//			//
-//			//			if (PWheel.AppliedLinearDriveForce > PWheel.LongitudinalAdhesiveLimit)
-//			//			{
-//			//				Canvas->SetDrawColor(FColor::Red);
-//			//			}
-//			//			else
-//			//			{
-//			//				Canvas->SetDrawColor(FColor::Green);
-//			//			}
-//			//			Ypos += Canvas->DrawText(RenderFont, FString::Printf(TEXT("Ap Drive : %.2f"), PWheel.AppliedLinearDriveForce), Xpos, Ypos);
-//			//
-//			//			if (PWheel.AppliedLinearBrakeForce > PWheel.LongitudinalAdhesiveLimit)
-//			//			{
-//			//				Canvas->SetDrawColor(FColor::Red);
-//			//			}
-//			//			else
-//			//			{
-//			//				Canvas->SetDrawColor(FColor::Green);
-//			//			}
-//			//			Ypos += Canvas->DrawText(RenderFont, FString::Printf(TEXT("Ap Brake : %.2f"), PWheel.AppliedLinearBrakeForce), Xpos, Ypos);
-//			//			Canvas->SetDrawColor(FColor::White);
-//			//
-//			//			//if (PWheel.Setup().EngineEnabled)
-//			//			//{
-//			//			//	Ypos += Canvas->DrawText(RenderFont, FString::Printf(TEXT("RPM        : %.1f"), PWheel.GetWheelRPM()), Xpos, Ypos);
-//			//			//	Ypos += Canvas->DrawText(RenderFont, FString::Printf(TEXT("Geared RPM : %.1f"), PTransmission.GetEngineRPMFromWheelRPM(PWheel.GetWheelRPM())), Xpos, Ypos);
-//			//
-//			//			//}
-//			//
-//			//			if (ContactMat)
-//			//			{
-//			//				Canvas->DrawText(RenderFont
-//			//					, FString::Printf(TEXT("Friction %d"), ContactMat->Friction)
-//			//					, WheelDrawPosition.X, WheelDrawPosition.Y-95.f);
-//			//			}
-//
-//		}
-//
-//	}
-//
-//	if (DebugPage == EDynamicDebugPages::SteeringPage)
-//	{
-//		//FVector2D MaxSize = GetWheelLayoutDimensions();
-//
-//		//auto& PSteering = PVehicle->GetSteering();
-//
-//		//FVector2D J1, J2;
-//		//for (int WheelIdx = 0; WheelIdx < PVehicle->Wheels.Num(); WheelIdx++)
-//		//{
-//		//	FDynamicWheelSetup& WheelSetup = (useSystem1ForDifferential?(WheelSetupsForDifferentialSystem1):(WheelSetupsForDifferentialSystem2))[WheelIdx];
-//		//	auto& PWheel = PVehicleOutput->Wheels[WheelIdx];
-//		//	const FVector WheelOffset = GetWheelRestingPosition(WheelSetup);
-//
-//		//	float Scale = 300.0f / MaxSize.X;
-//		//	FVector2D CentreDrawPosition(450, 400);
-//		//	FVector2D WheelDrawPosition(WheelOffset.Y, -WheelOffset.X);
-//		//	WheelDrawPosition *= Scale;
-//		//	WheelDrawPosition += CentreDrawPosition;
-//
-//		//	if (PWheel.Setup().SteeringEnabled)
-//		//	{
-//		//		if (WheelOffset.Y > 0)
-//		//		{
-//		//			float SteerAngle = DegToRad(PWheel.GetSteeringAngle());
-//		//			FVector2D Tire = FVector2D(FMath::Sin(SteerAngle), -FMath::Cos(SteerAngle)) * 30.0f;
-//		//			FVector2D WPt = WheelDrawPosition;
-//		//			DrawLine2D(Canvas, WPt - Tire, WPt + Tire, FColor::Black, 8);
-//
-//		//			if (SteeringSetup.SteeringType == ESteeringType::Ackermann)
-//		//			{
-//		//				FVector2D C1, P, C2;
-//		//				PSteering.Ackermann.GetRightHingeLocations(C1, P, C2);
-//		//				C1.Y = -C1.Y;
-//		//				P.Y = -P.Y;
-//		//				C2.Y = -C2.Y;
-//
-//		//				FVector2D JPt = WheelDrawPosition + (P - C2) * Scale;
-//		//				FVector2D CPt = WheelDrawPosition + (C1 - C2) * Scale;
-//		//				DrawLine2D(Canvas, CPt, JPt, FColor::Orange, 3);
-//		//				DrawLine2D(Canvas, WPt, JPt, FColor::Orange, 3);
-//		//				J1 = CPt;
-//		//			}
-//		//		}
-//		//		else
-//		//		{
-//		//			float SteerAngle = DegToRad(PWheel.GetSteeringAngle());
-//		//			FVector2D Tire = FVector2D(FMath::Sin(SteerAngle), -FMath::Cos(SteerAngle)) * 30.0f;
-//		//			FVector2D WPt = WheelDrawPosition;
-//		//			DrawLine2D(Canvas, WPt - Tire, WPt + Tire, FColor::Black, 8);
-//
-//		//			if (SteeringSetup.SteeringType == ESteeringType::Ackermann)
-//		//			{
-//
-//		//				FVector2D C1, P, C2;
-//		//				PSteering.Ackermann.GetLeftHingeLocations(C1, P, C2);
-//		//				C1.Y = -C1.Y;
-//		//				P.Y = -P.Y;
-//		//				C2.Y = -C2.Y;
-//
-//		//				FVector2D JPt = WheelDrawPosition + (P - C2) * Scale;
-//		//				FVector2D CPt = WheelDrawPosition + (C1 - C2) * Scale;
-//		//				DrawLine2D(Canvas, CPt, JPt, FColor::Orange, 3);
-//		//				DrawLine2D(Canvas, WPt, JPt, FColor::Orange, 3);
-//		//				J2 = CPt;
-//		//			}
-//		//		}
-//		//	}
-//		//	else
-//		//	{
-//		//		FVector2D CPt = WheelDrawPosition;
-//		//		FVector2D Tire = FVector2D(0.f, 30.0f);
-//		//		DrawLine2D(Canvas, CPt - Tire, CPt + Tire, FColor::Black, 8);
-//		//	}
-//
-//		//	Canvas->DrawText(RenderFont
-//		//		, FString::Printf(TEXT("Angle %.1f"), PWheel.GetSteeringAngle())
-//		//		, WheelDrawPosition.X, WheelDrawPosition.Y - 15.f);
-//
-//		//}
-//		//DrawLine2D(Canvas, J1, J2, FColor::Red, 3);
-//
-//	}
-//
-//	// draw engine torque curve - just putting engine under transmission
-//	if (DebugPage == EDynamicDebugPages::TransmissionPage && bMechanicalSimEnabled)
-//	{
-//		auto& PTransmissionSetup = TransmissionSetup;
-//
-//		float MaxTorque = EngineSetup.MaxTorque;
-//		int CurrentRPM = (int)PVehicleOutput->EngineRPM;
-//		FVector2D CurrentValue(CurrentRPM, PVehicleOutput->EngineTorque);
-//		int GraphWidth = 200; int GraphHeight = 120;
-//		int GraphXPos = 200; int GraphYPos = 400;
-//
-//		Canvas->DrawDebugGraph(FString("Engine Torque Graph")
-//			, CurrentValue.X, CurrentValue.Y
-//			, GraphXPos, GraphYPos,
-//			GraphWidth, GraphHeight,
-//			FVector2D(0, EngineSetup.MaxRPM), FVector2D(MaxTorque, 0));
-//
-//		FVector2D LastPoint;
-//		for (float RPM = 0; RPM <= EngineSetup.MaxRPM; RPM += 10.f)
-//		{
-//			float X = RPM / EngineSetup.MaxRPM;
-//			float Y = EngineSetup.GetTorqueFromRPM(RPM) / MaxTorque;
-//			//float Y = PEngine.GetTorqueFromRPM(RPM, false) / MaxTorque;
-//			FVector2D NextPoint(GraphXPos + GraphWidth * X, GraphYPos + GraphHeight - GraphHeight * Y);
-//			if (RPM > SMALL_NUMBER)
-//			{
-//				DrawLine2D(Canvas, LastPoint, NextPoint, FColor::Cyan);
-//			}
-//			LastPoint = NextPoint;
-//		}
-//
-//		Canvas->DrawText(RenderFont
-//			, FString::Printf(TEXT("RevRate %.1f"), EngineSetup.EngineRevDownRate)
-//			, GraphXPos, GraphYPos);
-//
-//	}
-//
-//	// draw transmission torque curve
-//	if (DebugPage == EDynamicDebugPages::TransmissionPage && bMechanicalSimEnabled)
-//	{
-//		auto& ESetup = EngineSetup;
-//		auto& TSetup = TransmissionSetup;
-//		float MaxTorque = ESetup.MaxTorque;
-//		float MaxGearRatio = TSetup.ForwardGearRatios[0] * TSetup.FinalRatio; // 1st gear always has the highest multiplier
-//		float LongGearRatio = TSetup.ForwardGearRatios[TSetup.ForwardGearRatios.Num() - 1] * TSetup.FinalRatio;
-//		int GraphWidth = 400; int GraphHeight = 240;
-//		int GraphXPos = 500; int GraphYPos = 150;
-//
-//		{
-//			float X = PVehicleOutput->TransmissionRPM;
-//			float Y = PVehicleOutput->TransmissionTorque;
-//
-//			FVector2D CurrentValue(X, Y);
-//			Canvas->DrawDebugGraph(FString("Transmission Torque Graph")
-//				, CurrentValue.X, CurrentValue.Y
-//				, GraphXPos, GraphYPos
-//				, GraphWidth, GraphHeight
-//				, FVector2D(0, ESetup.MaxRPM / LongGearRatio), FVector2D(MaxTorque * MaxGearRatio, 0));
-//		}
-//
-//		FVector2D LastPoint;
-//
-//		for (int Gear = 1; Gear <= TSetup.ForwardGearRatios.Num(); Gear++)
-//		{
-//			for (int EngineRPM = 0; EngineRPM <= ESetup.MaxRPM; EngineRPM += 10)
-//			{
-//				float RPMOut = EngineRPM / TSetup.GetGearRatio(Gear);
-//
-//				float X = RPMOut / (ESetup.MaxRPM / LongGearRatio);
-//				float Y = ESetup.GetTorqueFromRPM(EngineRPM) * TSetup.GetGearRatio(Gear) / (MaxTorque * MaxGearRatio);
-//				FVector2D NextPoint(GraphXPos + GraphWidth * X, GraphYPos + GraphHeight - GraphHeight * Y);
-//				if (EngineRPM > 0)
-//				{
-//					DrawLine2D(Canvas, LastPoint, NextPoint, FColor::Cyan);
-//				}
-//				LastPoint = NextPoint;
-//			}
-//		}
-//	}
-//
-//	// for each of the wheel positions, draw the expected suspension movement limits and the current length
-//	if (DebugPage == EDynamicDebugPages::SuspensionPage)
-//	{
-//		FVector2D MaxSize = GetWheelLayoutDimensions();
-//
-//		for (int32 WheelIdx = 0; WheelIdx < (useSystem1ForDifferential?(WheelSetupsForDifferentialSystem1):(WheelSetupsForDifferentialSystem2)).Num(); ++WheelIdx)
-//		{
-//			FDynamicWheelSetup& WheelSetup = (useSystem1ForDifferential?(WheelSetupsForDifferentialSystem1):(WheelSetupsForDifferentialSystem2))[WheelIdx];
-//			UDynamicWheel* Wheel = WheelSetup.WheelClass.GetDefaultObject();
-//			check(Wheel);
-//			UDynamicWheel* VehicleWheel = Wheels[WheelIdx];
-//
-//			const FVector WheelOffset = GetWheelRestingPosition(WheelSetup);
-//
-//			float DrawScale = 200;
-//			FVector2D CentreDrawPosition(500, 350);
-//			FVector2D WheelDrawPosition(WheelOffset.Y, -WheelOffset.X);
-//			WheelDrawPosition *= DrawScale;
-//			WheelDrawPosition /= MaxSize.X;
-//			WheelDrawPosition += CentreDrawPosition;
-//
-//			{
-//				// suspension resting position
-//				FVector2D Start = WheelDrawPosition + FVector2D(-10.f, 0.f);
-//				FVector2D End = Start + FVector2D(20.f, 0.f);
-//				DrawLine2D(Canvas, Start, End, FColor::Yellow, 2.f);
-//			}
-//
-//			float Raise = VehicleWheel->SuspensionMaxRaise;
-//			float Drop = VehicleWheel->SuspensionMaxDrop;
-//			float Scale = 5.0f;
-//
-//			{
-//				// suspension compression limit
-//				FVector2D Start = WheelDrawPosition + FVector2D(-20.f, -Raise * Scale);
-//				FVector2D End = Start + FVector2D(40.f, 0.f);
-//				DrawLine2D(Canvas, Start, End, FColor::White, 2.f);
-//				Canvas->DrawText(RenderFont, FString::Printf(TEXT("Raise Limit %.1f"), Raise), Start.X, Start.Y - 16);
-//			}
-//
-//			{
-//				// suspension extension limit
-//				FVector2D Start = WheelDrawPosition + FVector2D(-20.f, Drop * Scale);
-//				FVector2D End = Start + FVector2D(40.f, 0.f);
-//				DrawLine2D(Canvas, Start, End, FColor::White, 2.f);
-//				Canvas->DrawText(RenderFont, FString::Printf(TEXT("Drop Limit %.1f"), Drop), Start.X, Start.Y);
-//			}
-//
-//			{
-//				// current suspension length
-//				FVector2D Start = WheelDrawPosition;
-//				FVector2D End = Start - FVector2D(0.f, VehicleWheel->GetSuspensionOffset() * Scale);
-//				DrawLine2D(Canvas, Start, End, FColor::Green, 4.f);
-//			}
-//
-//		}
-//	}
-//#endif
-//}
 
 #if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
 
@@ -3098,25 +2636,21 @@ void UDynamicVehicleMovementComponent::PostEditChangeProperty(struct FPropertyCh
 
 	RecalculateAxles();
 
-	vehicleFunctionalities.SetTransmissionNature(isVehicleAutomatic);
-
-	if (isVehicleAutomatic && PropertyName=="isVehicleAutomatic")		//Auto Vehicle 
+	if ((TransmissionSetup.vehicleTransmissionType==ETransmissionType::Automatic || TransmissionSetup.vehicleTransmissionType == ETransmissionType::Hybrid) && PropertyName=="vehicleTransmissionType")		//Auto Vehicle 
 	{
 		//Set functionality defaults
 		vehicleFunctionalities.vehicleHasHighLowGears = false; 
 		vehicleFunctionalities.vehicleHasManualFuelHandle = false;
+		fuelValueToSustainIdleRPM = 0;
 		//vehicleFunctionalities.vehicleHasTransferCase = false; Vehicle can have changeable trasnfercase in automatic
 		//vehicleFunctionalities.vehicleHasMultipleDifferentials = false; Possible in automatic
 		
 
 		//Set transmission setup values
 		TransmissionSetup.bUseHighLowRatios = false;
-		TransmissionSetup.bUseAutomaticGears = true;
 	}
-	else if (!isVehicleAutomatic && PropertyName == "isVehicleAutomatic")	//Manual Vehicle
+	else if (TransmissionSetup.vehicleTransmissionType == ETransmissionType::Manual && PropertyName == "vehicleTransmissionType")	//Manual Vehicle
 	{
-		TransmissionSetup.bUseAutomaticGears = false;
-
 		bReverseAsBrake = false;
 		bThrottleAsBrake = false;
 	}
@@ -3135,6 +2669,26 @@ void UDynamicVehicleMovementComponent::PostEditChangeProperty(struct FPropertyCh
 		transferCaseConfig.isTransferCaseActive = true;
 	else if (PropertyName == "vehicleHasTransferCase")
 		transferCaseConfig.isTransferCaseActive = false;
+
+	if (PropertyName == "vehicleTransmissionType")
+	{
+		if (TransmissionSetup.vehicleTransmissionType == ETransmissionType::Automatic)
+		{
+			for (int i = 0; i < TransmissionSetup.ForwardGearRatiosSingular.Num(); i++)
+			{
+				TransmissionSetup.ForwardGearRatiosSingular[i].useSpeedLimitations = false;
+				TransmissionSetup.ForwardGearRatiosSingular[i].MinimumSpeed = 0;
+				TransmissionSetup.ForwardGearRatiosSingular[i].MaximumSpeed = -1;
+			}
+
+			for (int i = 0; i < TransmissionSetup.ReverseGearRatiosSingular.Num(); i++)
+			{
+				TransmissionSetup.ReverseGearRatiosSingular[i].useSpeedLimitations = false;
+				TransmissionSetup.ReverseGearRatiosSingular[i].MinimumSpeed = 0;
+				TransmissionSetup.ReverseGearRatiosSingular[i].MaximumSpeed = -1;
+			}
+		}
+	}
 
 
 	if (editDefaultRanges)
@@ -3179,6 +2733,8 @@ void UDynamicVehicleMovementComponent::PostEditChangeProperty(struct FPropertyCh
 			UE_LOG(LogTemp, Warning, TEXT("Clutch Threshold Value should be within clutch pedal range. Setting to Min Value+1"));
 		}
 	}
+
+	TransmissionSetup.SetTransferCaseModifier(transferCaseConfig.GetTransferCaseRatio());
 	
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
@@ -3189,15 +2745,15 @@ bool UDynamicVehicleMovementComponent::CanEditChange(const FProperty* InProperty
 	const bool ParentVal = Super::CanEditChange(InProperty);
 	if (InProperty->GetFName() == GET_MEMBER_NAME_CHECKED(UDynamicVehicleMovementComponent, bReverseAsBrake))
 	{
-		return ParentVal && isVehicleAutomatic;
+		return ParentVal && TransmissionSetup.vehicleTransmissionType == ETransmissionType::Automatic;
 	}
 	if (InProperty->GetFName() == GET_MEMBER_NAME_CHECKED(UDynamicVehicleMovementComponent, bThrottleAsBrake))
 	{
-		return ParentVal && isVehicleAutomatic;
+		return ParentVal && TransmissionSetup.vehicleTransmissionType == ETransmissionType::Automatic;
 	}
 	if (InProperty->GetFName() == GET_MEMBER_NAME_CHECKED(UDynamicVehicleMovementComponent, fuelValueToSustainIdleRPM))
 	{
-		return ParentVal && vehicleFunctionalities.vehicleHasManualFuelHandle && !isVehicleAutomatic;
+		return ParentVal && vehicleFunctionalities.vehicleHasManualFuelHandle && TransmissionSetup.vehicleTransmissionType == ETransmissionType::Manual ;
 	}
 	if (InProperty->GetFName() == GET_MEMBER_NAME_CHECKED(UDynamicVehicleMovementComponent, transferCaseConfig))
 	{
@@ -3206,6 +2762,54 @@ bool UDynamicVehicleMovementComponent::CanEditChange(const FProperty* InProperty
 	if (InProperty->GetFName() == GET_MEMBER_NAME_CHECKED(UDynamicVehicleMovementComponent, vehicleNonFunctionalAspects))
 	{
 		return ParentVal && vehicleFunctionalities.vehicleHasNonFunctionalAspects;
+	}
+	
+	if (InProperty->GetFName() == "EngineRevUpMOI")
+	{
+		return ParentVal && (TransmissionSetup.vehicleTransmissionType == ETransmissionType::Automatic || TransmissionSetup.vehicleTransmissionType == ETransmissionType::Hybrid) &&!EngineSetup.RPM_DependsOnFuelInput;
+	}
+	if (InProperty->GetFName() == "EngineRevDownRate")
+	{
+		return ParentVal && (TransmissionSetup.vehicleTransmissionType==ETransmissionType::Automatic || TransmissionSetup.vehicleTransmissionType == ETransmissionType::Hybrid) && !EngineSetup.RPM_DependsOnFuelInput;
+	}
+	if (InProperty->GetFName() == "useSpeedLimitations")
+	{
+		return ParentVal && (TransmissionSetup.vehicleTransmissionType != ETransmissionType::Automatic);
+	}
+	if (InProperty->GetFName() == "RPM_IncreasRate")
+	{
+		return ParentVal && EngineSetup.RPM_DependsOnFuelInput;
+	}
+	
+	if (InProperty->GetFName() == "clutchDisengagementValue")
+	{
+		return ParentVal && TransmissionSetup.vehicleTransmissionType == ETransmissionType::Manual;
+	}
+	if (InProperty->GetFName() == "clutchThresholdValue")
+	{
+		return ParentVal && TransmissionSetup.vehicleTransmissionType == ETransmissionType::Manual;
+	}
+	if (InProperty->GetFName() == "clutchPedalMinValue")
+	{
+		return ParentVal && TransmissionSetup.vehicleTransmissionType == ETransmissionType::Manual;
+	}
+	if (InProperty->GetFName() == "clutchPedalMaxValue")
+	{
+		return ParentVal && TransmissionSetup.vehicleTransmissionType == ETransmissionType::Manual;
+	}
+
+	if (InProperty->GetFName() == "breakValueToAllowModeChange")
+	{
+		return ParentVal && TransmissionSetup.vehicleTransmissionType != ETransmissionType::Manual;
+	}
+
+	if (InProperty->GetFName() == "turboModeDuration")
+	{
+		return ParentVal && vehicleFunctionalities.vehicleHasTurboMode;
+	}
+	if (InProperty->GetFName() == "turboModeFactor")
+	{
+		return ParentVal && vehicleFunctionalities.vehicleHasTurboMode;
 	}
 	return ParentVal;
 }
@@ -3233,11 +2837,7 @@ UDynamicVehicleMovementComponent::UDynamicVehicleMovementComponent(const FObject
 
 	WheelTraceCollisionResponses = FCollisionResponseContainer::GetDefaultResponseContainer();
 	WheelTraceCollisionResponses.Vehicle = ECR_Ignore;
-
-	vehicleFunctionalities.SetTransmissionNature(isVehicleAutomatic);
-	TransmissionSetup.SetTransferCaseModifier(transferCaseConfig.GetTransferCaseRatio());
-
-	currentTransferCaseRatio = transferCaseConfig.GetTransferCaseRatio();
+	
 
 	if (vehicleLights.useVehicleLights)
 	{
@@ -3437,19 +3037,116 @@ void UDynamicVehicleMovementComponent::GearDown()
 
 void UDynamicVehicleMovementComponent::GoNeutral()
 {
-	SetNewGear(0);
+	if (TransmissionSetup.IsCurrentTransmissionModeManual())
+	{
+		SetNewGear(0);
+		UpdateVehicleEngineState();
+	}
+	else
+	{
+		if (vehicleFunctionalities.autoVehicleNeedsBreakPress)
+		{
+			if (currentInputs.currentBreakPedalValue > (breakPedalMaxValue - breakPedalMinValue) * breakValueToAllowModeChange)
+			{
+				Super::SetTargetGear(0, true);
+				UpdateVehicleEngineState();
+			}
+		}
+		else
+		{
+			Super::SetTargetGear(0, true);
+			UpdateVehicleEngineState();
+		}
+	}
+	
 }
 
 void UDynamicVehicleMovementComponent::PutInReverse()
 {
-	SetNewGear(-1);
+	if (IsEngineStarted())
+	{
+		if (TransmissionSetup.IsCurrentTransmissionModeManual())
+			SetNewGear(-1);
+		else
+		{
+			if (vehicleFunctionalities.autoVehicleNeedsBreakPress)
+			{
+				if (currentInputs.currentBreakPedalValue > (breakPedalMaxValue - breakPedalMinValue) * breakValueToAllowModeChange)
+				{
+					Super::SetTargetGear(-1, true);
+				}
+			}
+			else
+			{
+				Super::SetTargetGear(-1, true);
+			}
+		}
+	}
 }
 
-int UDynamicVehicleMovementComponent::GetCurrentActiveGear() const
+void UDynamicVehicleMovementComponent::SetDriveModeForAutomatic()
+{
+	if (IsEngineStarted())
+	{
+		if (vehicleFunctionalities.autoVehicleNeedsBreakPress)
+		{
+			if (currentInputs.currentBreakPedalValue > (breakPedalMaxValue - breakPedalMinValue) * breakValueToAllowModeChange)
+			{
+				if (!TransmissionSetup.IsCurrentTransmissionModeManual())
+					Super::SetTargetGear(1, true);
+			}
+		}
+		else
+		{
+			if (!TransmissionSetup.IsCurrentTransmissionModeManual())
+				Super::SetTargetGear(1, true);
+		}
+	}
+}
+
+bool UDynamicVehicleMovementComponent::SetMaxGearLock(int GearNum)
+{
+	if(TransmissionSetup.vehicleTransmissionType == ETransmissionType::Manual && TransmissionSetup.bUseHighLowRatios )
+		maxGearLock = FMath::Clamp(GearNum, 0, TransmissionSetup.ForwardGearRatios.Num());
+	else
+		maxGearLock = FMath::Clamp(GearNum, 0, TransmissionSetup.ForwardGearRatiosSingular.Num());
+
+	if (derivedPtrForSimulationClass)
+	{
+		derivedPtrForSimulationClass->dataImpactingSimulation.SetMaxGearLock(maxGearLock);
+	}
+	if (GetCurrentActiveGear() > maxGearLock)
+	{
+		ChangeTransmissionSystem(false);
+		GearDown();
+		GetWorld()->GetTimerManager().SetTimer(gearDownToMaxGear_TimerHandle, this, &UDynamicVehicleMovementComponent::GearDownToMatchMaxGear, 0.5f, true);
+
+	}
+
+	return true;
+	
+}
+
+void UDynamicVehicleMovementComponent::GearDownToMatchMaxGear()
+{
+	int currentGear = GetCurrentActiveGear();
+	if (currentGear > maxGearLock)
+	{
+		GearDown();
+	}
+	if (currentGear == maxGearLock && GetEngineRotationSpeed() <= TransmissionSetup.ChangeUpRPM - 2) //allow to be called extra times to be safe
+	{
+		GetWorld()->GetTimerManager().ClearTimer(gearDownToMaxGear_TimerHandle);
+		ChangeTransmissionSystem(true);
+	}
+
+}
+
+int UDynamicVehicleMovementComponent::GetCurrentActiveGear()
 {
 	int activeGear;
 	activeGear = GetCurrentGear();
-	if (!isVehicleAutomatic)
+	if (TransmissionSetup.IsCurrentTransmissionModeManual())
 	{
 		if (vehicleFunctionalities.vehicleHasHighLowGears)
 		{
@@ -3462,9 +3159,9 @@ int UDynamicVehicleMovementComponent::GetCurrentActiveGear() const
 	return activeGear;
 }
 
-float UDynamicVehicleMovementComponent::GetCurrentActiveGearRatio() const
+float UDynamicVehicleMovementComponent::GetCurrentActiveGearRatio()
 {
-	if (TransmissionSetup.bUseAutomaticGears)
+	if (!TransmissionSetup.IsCurrentTransmissionModeManual())
 	{
 		return TransmissionSetup.GetGearRatioAutomatic(GetCurrentActiveGear());
 	}
@@ -3478,14 +3175,14 @@ float UDynamicVehicleMovementComponent::GetCurrentActiveGearRatio() const
 		else
 		{
 			FSingularGearCombo combo = TransmissionSetup.GetGearRatioSingular(GetCurrentActiveGear());
-			return combo.Ratio;
+			return combo.RatioSingular;
 		}
 		
 	}
 	
 }
 
-float UDynamicVehicleMovementComponent::GetCurrentActiveGearRatioWithoutFinalGearRatioAffect() const
+float UDynamicVehicleMovementComponent::GetCurrentActiveGearRatioWithoutFinalGearRatioAffect()
 {
 	return (GetCurrentActiveGearRatio() / TransmissionSetup.FinalRatio);
 }
@@ -3518,6 +3215,183 @@ void UDynamicVehicleMovementComponent::ChangeHighLowGearSystem(bool useHighGears
 				transmissionSystemChanged.Broadcast(usingHighGears);
 			}
 		}
+	}
+}
+
+bool UDynamicVehicleMovementComponent::CanChangeGear()
+{
+	if (TransmissionSetup.vehicleTransmissionType == ETransmissionType::Manual)
+	{
+		return currentEngineState == EEngineState::EngineGearChangeable || currentEngineState == EEngineState::EngineDisengaged;
+	}
+	else
+	{
+		return TransmissionSetup.IsCurrentTransmissionModeManual();
+	}
+}
+
+bool UDynamicVehicleMovementComponent::SetNewGear(int GearNum, bool changeImmediately)
+{
+	bool inputValueUpdated = false;
+	int oldGear = GetCurrentActiveGear();
+	bool skippingGears = FMath::Abs(oldGear - GearNum) > 1 ? true : false;
+	if (oldGear != GearNum)
+	{
+		inputValueUpdated = true;
+	}
+
+	if (!TransmissionSetup.IsCurrentTransmissionModeManual())
+	{
+		return false;
+	}
+	else
+	{
+		//Should be able to change gear when engine totally disengaged, within gear change range or in idle.
+		if (CanChangeGear())
+		{
+
+			if (GearNum > maxGearLock && GearNum>oldGear)
+			{
+				FVehicleActionErrors actionError;
+				actionError.didEngineStall = false;
+				actionError.errorReason = EActionErrorReason::AttemptedToSetGearHigherThanMaxGearLock;
+				actionError.areValuesFilled = true;
+				actionErrorCaused.Broadcast(actionError);
+
+				return false;
+			}
+
+			if (GearNum == 0)
+			{
+				if (GetCurrentActiveGear() != 1 && GetCurrentActiveGear() != -1 && GetCurrentActiveGear() != 0)
+				{
+					FVehicleActionErrors actionError;
+					actionError.didEngineStall = false;
+					actionError.errorReason = EActionErrorReason::GearsSkipped;
+					actionError.areValuesFilled = true;
+					actionErrorCaused.Broadcast(actionError);
+				}
+				Super::SetTargetGear(0, true);
+				previousGear = oldGear;
+				gearChanged.Broadcast(oldGear, 0, skippingGears);
+				if (GearNum < oldGear && GearNum>0)
+				{
+					isInDownshiftRPMMode = true;
+				}
+
+
+				UpdateVehicleEngineState();
+				return true;
+			}
+
+			else if ((GearNum < 0 && GetMovementDirection() == EVehicleMovementDirection::Forward))
+			{
+				if (vehicleFunctionalities.shouldEngineStallOnCriticalMistakes)
+					SetEngineStarterValue(false);
+				FVehicleActionErrors actionError;
+				actionError.didEngineStall = true && vehicleFunctionalities.shouldEngineStallOnCriticalMistakes;
+				actionError.errorReason = EActionErrorReason::ChangeToGearWithMovementInOppositeDirection_Critical;
+				actionError.areValuesFilled = true;
+				actionErrorCaused.Broadcast(actionError);
+			}
+
+
+			if (vehicleFunctionalities.vehicleHasHighLowGears)
+			{
+				if (GearNum > 0 && GearNum > TransmissionSetup.ForwardGearRatios.Num())
+				{
+					return false;
+				}
+				else if (GearNum < 0 && (-1 * GearNum) > TransmissionSetup.ReverseGearRatios.Num())
+				{
+					return false;
+				}
+				else
+				{
+					if (IsUsingHighGears())
+					{
+						if (GetCurrentActiveGear() != GearNum + 1 && GetCurrentActiveGear() != GearNum - 1 && GetCurrentActiveGear() != GearNum)
+						{
+							FVehicleActionErrors actionError;
+							actionError.didEngineStall = false;
+							actionError.errorReason = EActionErrorReason::GearsSkipped;
+							actionError.areValuesFilled = true;
+							actionErrorCaused.Broadcast(actionError);
+						}
+						previousGear = oldGear;
+						Super::SetTargetGear(GearNum > 0 ? (GearNum * 2 - 1) : (GearNum * 2 + 1), changeImmediately);
+						gearChanged.Broadcast(oldGear, GearNum, skippingGears);
+						UpdateVehicleEngineState();
+					}
+					else
+					{
+						if (GetCurrentActiveGear() != GearNum + 1 && GetCurrentActiveGear() != GearNum - 1 && GetCurrentActiveGear() != GearNum)
+						{
+							FVehicleActionErrors actionError;
+							actionError.didEngineStall = false;
+							actionError.errorReason = EActionErrorReason::GearsSkipped;
+							actionError.areValuesFilled = true;
+							actionErrorCaused.Broadcast(actionError);
+						}
+						previousGear = oldGear;
+						Super::SetTargetGear(GearNum * 2, changeImmediately);
+						gearChanged.Broadcast(oldGear, GearNum, skippingGears);
+						UpdateVehicleEngineState();
+					}
+
+					if (GearNum < oldGear && GearNum>0)
+					{
+						isInDownshiftRPMMode = true;
+					}
+
+					return true;
+				}
+			}
+			else
+			{
+				if (GearNum > 0 && GearNum > TransmissionSetup.ForwardGearRatiosSingular.Num())
+				{
+					return false;
+				}
+				else if (GearNum < 0 && (-1 * GearNum) > TransmissionSetup.ReverseGearRatiosSingular.Num())
+				{
+					return false;
+				}
+				else
+				{
+					if (GetCurrentActiveGear() != GearNum + 1 && GetCurrentActiveGear() != GearNum - 1 && GetCurrentActiveGear() != GearNum)
+					{
+						FVehicleActionErrors actionError;
+						actionError.didEngineStall = false;
+						actionError.errorReason = EActionErrorReason::GearsSkipped;
+						actionError.areValuesFilled = true;
+						actionErrorCaused.Broadcast(actionError);
+					}
+					previousGear = oldGear;
+					Super::SetTargetGear(GearNum, changeImmediately);
+					gearChanged.Broadcast(oldGear, GearNum, skippingGears);
+					UpdateVehicleEngineState();
+
+					if (GearNum < oldGear && GearNum>0)
+					{
+						isInDownshiftRPMMode = true;
+					}
+
+					return true;
+				}
+			}
+
+
+		}
+		else
+		{
+			FVehicleActionErrors actionError;
+			actionError.didEngineStall = false;
+			actionError.errorReason = EActionErrorReason::ChangeGearWithoutAppropriateClutch;
+			actionError.areValuesFilled = true;
+			actionErrorCaused.Broadcast(actionError);
+		}
+		return false;
 	}
 }
 
@@ -3555,9 +3429,9 @@ EEngineState UDynamicVehicleMovementComponent::GetCurrentEngineState() const
 	return currentEngineState;
 }
 
-bool UDynamicVehicleMovementComponent::IsVehicleUsingAutomaticTransmission() const
+bool UDynamicVehicleMovementComponent::IsVehicleUsingAutomaticTransmission()
 {
-	return isVehicleAutomatic;
+	return !(TransmissionSetup.IsCurrentTransmissionModeManual());
 }
 
 FDynamicInputData UDynamicVehicleMovementComponent::GetCurrentInputData() const
@@ -3762,16 +3636,16 @@ void UDynamicVehicleMovementComponent::ToggleIndicators(bool enable, bool left)
 	{
 		FTimerDelegate TimerDelegate;
 
-		if (left && !leftIndicatorFlickerHandle.IsValid())
+		if (left && !leftIndicatorFlicker_TimerHandle.IsValid())
 		{
 			TimerDelegate.BindUFunction(this, FName("FlickerIndicator"), true);
-			GetWorld()->GetTimerManager().SetTimer(leftIndicatorFlickerHandle, TimerDelegate, .5, true);
+			GetWorld()->GetTimerManager().SetTimer(leftIndicatorFlicker_TimerHandle, TimerDelegate, .5, true);
 			currentInputs.vehicleLeftTurnIndicatorsOn = true;
 		}
-		else if(!left&&!rightIndicatorFlickerHandle.IsValid())
+		else if(!left&&!rightIndicatorFlicker_TimerHandle.IsValid())
 		{
 			TimerDelegate.BindUFunction(this, FName("FlickerIndicator"), false);
-			GetWorld()->GetTimerManager().SetTimer(rightIndicatorFlickerHandle, TimerDelegate, .5, true);
+			GetWorld()->GetTimerManager().SetTimer(rightIndicatorFlicker_TimerHandle, TimerDelegate, .5, true);
 			currentInputs.vehicleRightTurnIndicatorsOn = true;
 		}
 	}
@@ -3779,7 +3653,7 @@ void UDynamicVehicleMovementComponent::ToggleIndicators(bool enable, bool left)
 	{
 		if (left)
 		{
-			GetWorld()->GetTimerManager().ClearTimer(leftIndicatorFlickerHandle);
+			GetWorld()->GetTimerManager().ClearTimer(leftIndicatorFlicker_TimerHandle);
 			leftLightFlickerOn = false;
 			currentInputs.vehicleLeftTurnIndicatorsOn = false;
 			vehicleLights.turnLightLeft.fetchedLightComponent->SetVisibility(false, true);
@@ -3790,7 +3664,7 @@ void UDynamicVehicleMovementComponent::ToggleIndicators(bool enable, bool left)
 		}
 		else
 		{
-			GetWorld()->GetTimerManager().ClearTimer(rightIndicatorFlickerHandle);
+			GetWorld()->GetTimerManager().ClearTimer(rightIndicatorFlicker_TimerHandle);
 			rightLightFlickerOn = false;
 			currentInputs.vehicleRightTurnIndicatorsOn = false;
 			vehicleLights.turnLightLeft.fetchedLightComponent->SetVisibility(false, true);
@@ -3916,17 +3790,17 @@ void UDynamicVehicleMovementComponent::StartFakeRPM()
 {
 	fakeRPM = PVehicleOutput->EngineRPM;
 	useDelayedRPM = true;
-	GetWorld()->GetTimerManager().SetTimer(decayedRPMSetter, this, &UDynamicVehicleMovementComponent::EndFakeRPM, 3.0f, false);
+	GetWorld()->GetTimerManager().SetTimer(decayedRPMSetter_TimerHandle, this, &UDynamicVehicleMovementComponent::EndFakeRPM, 3.0f, false);
 
-	GetWorld()->GetTimerManager().SetTimer(decayedRPM, this, &UDynamicVehicleMovementComponent::ModifyFakeRPM, .1f, true);
+	GetWorld()->GetTimerManager().SetTimer(decayedRPM_TimerHandle, this, &UDynamicVehicleMovementComponent::ModifyFakeRPM, .1f, true);
 
 }
 
 void UDynamicVehicleMovementComponent::EndFakeRPM()
 {
 	syncRPM = true;
-	GetWorld()->GetTimerManager().ClearTimer(decayedRPMSetter);
-	//GetWorld()->GetTimerManager().ClearTimer(decayedRPM);
+	GetWorld()->GetTimerManager().ClearTimer(decayedRPMSetter_TimerHandle);
+	//GetWorld()->GetTimerManager().ClearTimer(decayedRPM_TimerHandle);
 
 }
 
@@ -3938,7 +3812,7 @@ void UDynamicVehicleMovementComponent::ModifyFakeRPM()
 	{
 		if (fakeRPM - realRPM < KINDA_SMALL_NUMBER)
 		{
-			GetWorld()->GetTimerManager().ClearTimer(decayedRPM);
+			GetWorld()->GetTimerManager().ClearTimer(decayedRPM_TimerHandle);
 			useDelayedRPM = false;
 			fakeRPM = realRPM;
 			UE_LOG(LogTemp, Warning, TEXT("ModifyFakeRPM-> LINE 3946"));
@@ -3956,7 +3830,7 @@ void UDynamicVehicleMovementComponent::ModifyFakeRPM()
 		else
 		{
 			syncRPM = false;
-			GetWorld()->GetTimerManager().ClearTimer(decayedRPM);
+			GetWorld()->GetTimerManager().ClearTimer(decayedRPM_TimerHandle);
 			useDelayedRPM = false;
 			fakeRPM = realRPM;
 		}
@@ -3965,12 +3839,13 @@ void UDynamicVehicleMovementComponent::ModifyFakeRPM()
 		fakeRPM = EngineSetup.EngineIdleRPM;
 }
 
+
 bool UDynamicVehicleMovementComponent::ApplyGas(float gasPedalValue)
 {
 	bool inputValueUpdated = false;
-	if (TransmissionSetup.bUseAutomaticGears)
+	if (!TransmissionSetup.IsCurrentTransmissionModeManual())
 	{
-		if (currentEngineState == EEngineState::EngineEngaged || currentEngineState == EEngineState::EngineIdle)
+		if (currentEngineState == EEngineState::EngineEngaged /*|| currentEngineState == EEngineState::EngineIdle*/)
 		{
 			float mappedGasValue = UKismetMathLibrary::MapRangeClamped(gasPedalValue, gasPedalMinValue, gasPedalMaxValue, 0, 1);
 			SetThrottleInput(mappedGasValue);
@@ -4047,11 +3922,12 @@ bool UDynamicVehicleMovementComponent::ApplyBrakes(float breakPedalValue)
 		if (IsGasPedalPressed((gasPedalMaxValue - gasPedalMinValue) * .1f))
 		{
 			FVehicleActionErrors actionError;
-			actionError.didEngineStall = true;
-			actionError.errorReason = EActionErrorReason::GasAndBrakeInputTogether;
+			actionError.didEngineStall = true && vehicleFunctionalities.shouldEngineStallOnCriticalMistakes;
+			actionError.errorReason = EActionErrorReason::GasAndBrakeInputTogether_Critical;
 			actionError.areValuesFilled;
 			actionErrorCaused.Broadcast(actionError);
-			SetEngineStarterValue(false);
+			if(vehicleFunctionalities.shouldEngineStallOnCriticalMistakes)
+				SetEngineStarterValue(false);
 
 		}
 
@@ -4097,7 +3973,7 @@ bool UDynamicVehicleMovementComponent::ApplyClutch(float clutchPedalValue)
 	if (FMath::Abs(currentInputs.currentClutchPedalValue - clutchPedalValue) > KINDA_SMALL_NUMBER)
 		inputValueUpdated = true;
 
-	if (TransmissionSetup.bUseAutomaticGears)
+	if (!TransmissionSetup.IsCurrentTransmissionModeManual())
 	{ 
 		return false;
 	}
@@ -4146,11 +4022,11 @@ bool UDynamicVehicleMovementComponent::ApplyClutch(float clutchPedalValue)
 			float currentGearMinimumSpeed = 0;
 			if (currentGear > 0)
 			{
-				currentGearMinimumSpeed = TransmissionSetup.GetMinimumSpeedForGear(currentGear - 1, true);
+				currentGearMinimumSpeed = TransmissionSetup.GetMinimumSpeedForGear(currentGear , true);
 			}
 			else if (currentGear < 0)
 			{
-				currentGearMinimumSpeed = TransmissionSetup.GetMinimumSpeedForGear(currentGear * -1 - 1, false);
+				currentGearMinimumSpeed = TransmissionSetup.GetMinimumSpeedForGear(currentGear * -1 , false);
 			}
 			float throttleWhenLeavingClutch = ((clutchPedalMaxValue - clutchPedalValue) * .5);
 			if (currentVehicleSpeed > currentGearMinimumSpeed)
@@ -4403,6 +4279,68 @@ bool UDynamicVehicleMovementComponent::IsGasPedalPressed(float aboveValue)
 	else return false;
 }
 
+ETransmissionType UDynamicVehicleMovementComponent::GetVehicleTransmissionType()
+{
+	return TransmissionSetup.vehicleTransmissionType;
+}
+
+bool UDynamicVehicleMovementComponent::IsVehicleInManualMode()
+{
+	return TransmissionSetup.IsCurrentTransmissionModeManual();
+}
+
+int UDynamicVehicleMovementComponent::GetCurrentMaxGear()
+{
+	return maxGearLock;
+}
+
+bool UDynamicVehicleMovementComponent::IsTurboModeActive()
+{
+	return TurboModeActive;
+}
+
+float UDynamicVehicleMovementComponent::GetTurboModeDuration()
+{
+	return vehicleFunctionalities.vehicleHasTurboMode ? turboModeDuration : 0;
+}
+
+float UDynamicVehicleMovementComponent::GetTurboModeIncreaseFactor()
+{
+	return vehicleFunctionalities.vehicleHasTurboMode ? turboModeFactor : 0;
+}
+
+void UDynamicVehicleMovementComponent::SetTurboModeData(float duration, float increaseFactor)
+{
+	if (vehicleFunctionalities.vehicleHasTurboMode)
+	{
+		turboModeDuration = FMath::Max(duration, 0);
+		turboModeFactor = FMath::Max(increaseFactor, 0);
+	}
+}
+
+void UDynamicVehicleMovementComponent::ActivateTurboMode()
+{
+	if (vehicleFunctionalities.vehicleHasTurboMode)
+	{
+		if (derivedPtrForSimulationClass)
+		{
+			derivedPtrForSimulationClass->dataImpactingSimulation.ModifyDriveTorqueFactor(turboModeFactor);
+			TurboModeActive = true;
+			GetWorld()->GetTimerManager().SetTimer(turboMode_TimerHandle, this, &UDynamicVehicleMovementComponent::DeactivateTurboMode, turboModeDuration);
+		}
+	}
+}
+
+void UDynamicVehicleMovementComponent::DeactivateTurboMode()
+{
+	if (derivedPtrForSimulationClass)
+	{
+		derivedPtrForSimulationClass->dataImpactingSimulation.ModifyDriveTorqueFactor(1);
+		TurboModeActive = false;
+		GetWorld()->GetTimerManager().ClearTimer(turboMode_TimerHandle);
+	}
+}
+
 void UDynamicVehicleMovementComponent::ToggleTrackingTravelDistance(bool enable)
 {
 	if (enable)
@@ -4420,157 +4358,6 @@ void UDynamicVehicleMovementComponent::ToggleTrackingTravelDistance(bool enable)
 	else
 	{
 		shouldTrackTravelDistance = false;
-	}
-}
-
-bool UDynamicVehicleMovementComponent::SetNewGear(int GearNum, bool changeImmediately)
-{
-	bool inputValueUpdated = false;
-	int oldGear = GetCurrentActiveGear();
-	bool skippingGears = FMath::Abs(oldGear - GearNum) > 1 ? true : false;
-	if (oldGear != GearNum)
-	{
-		inputValueUpdated = true;
-	}
-
-	if (TransmissionSetup.bUseAutomaticGears)
-	{
-		return false;
-	}
-	else
-	{
-		//Should be able to change gear when engine totally disengaged, within gear change range or in idle.
-		if (currentEngineState == EEngineState::EngineGearChangeable || currentEngineState == EEngineState::EngineDisengaged)
-		{
-			if (GearNum == 0)
-			{
-				if (GetCurrentActiveGear() != 1 && GetCurrentActiveGear() != -1 && GetCurrentActiveGear() != 0)
-				{
-					FVehicleActionErrors actionError;
-					actionError.didEngineStall = false;
-					actionError.errorReason = EActionErrorReason::GearsSkipped;
-					actionError.areValuesFilled = true;
-					actionErrorCaused.Broadcast(actionError);
-				}
-				Super::SetTargetGear(0, true);
-				previousGear = oldGear;
-				gearChanged.Broadcast(oldGear, 0, skippingGears);
-				if (GearNum < oldGear && GearNum>0)
-				{
-					isDownshift = true;
-				}
-				
-
-				UpdateVehicleEngineState();
-				return true;
-			}
-
-			else if ((GearNum < 0 && GetMovementDirection() == EVehicleMovementDirection::Forward))
-			{
-				SetEngineStarterValue(false);
-				FVehicleActionErrors actionError;
-				actionError.didEngineStall = true;
-				actionError.errorReason = EActionErrorReason::ChangeToGearWithMovementInOppositeDirection;
-				actionError.areValuesFilled = true;
-				actionErrorCaused.Broadcast(actionError);
-			}
-
-			if (vehicleFunctionalities.vehicleHasHighLowGears)
-			{
-				if (GearNum > 0 && GearNum > TransmissionSetup.ForwardGearRatios.Num())
-				{
-					return false;
-				}
-				else if (GearNum < 0 && (-1 * GearNum) > TransmissionSetup.ReverseGearRatios.Num())
-				{
-					return false;
-				}
-				else
-				{
-					if (IsUsingHighGears())
-					{
-						if (GetCurrentActiveGear() != GearNum+1 && GetCurrentActiveGear() != GearNum -1 && GetCurrentActiveGear() != GearNum)
-						{
-							FVehicleActionErrors actionError;
-							actionError.didEngineStall = false;
-							actionError.errorReason = EActionErrorReason::GearsSkipped;
-							actionError.areValuesFilled = true;
-							actionErrorCaused.Broadcast(actionError);
-						}
-						previousGear = oldGear;
-						Super::SetTargetGear(GearNum > 0 ? (GearNum * 2 - 1) : (GearNum * 2 + 1), changeImmediately);
-						gearChanged.Broadcast(oldGear, GearNum, skippingGears);
-						UpdateVehicleEngineState();
-					}
-					else
-					{
-						if (GetCurrentActiveGear() != GearNum + 1 && GetCurrentActiveGear() != GearNum - 1 && GetCurrentActiveGear() != GearNum)
-						{
-							FVehicleActionErrors actionError;
-							actionError.didEngineStall = false;
-							actionError.errorReason = EActionErrorReason::GearsSkipped;
-							actionError.areValuesFilled = true;
-							actionErrorCaused.Broadcast(actionError);
-						}
-						previousGear = oldGear;
-						Super::SetTargetGear(GearNum * 2, changeImmediately);
-						gearChanged.Broadcast(oldGear, GearNum, skippingGears);
-						UpdateVehicleEngineState();
-					}
-
-					if (GearNum < oldGear && GearNum>0)
-					{
-						isDownshift = true;
-					}
-
-					return true;
-				}
-			}
-			else
-			{
-				if (GearNum > 0 && GearNum > TransmissionSetup.ForwardGearRatiosSingular.Num())
-				{
-					return false;
-				}
-				else if (GearNum < 0 && (-1 * GearNum) > TransmissionSetup.ReverseGearRatiosSingular.Num())
-				{
-					return false;
-				}
-				else
-				{
-					if (GetCurrentActiveGear() != GearNum + 1 && GetCurrentActiveGear() != GearNum - 1 && GetCurrentActiveGear() != GearNum)
-					{
-						FVehicleActionErrors actionError;
-						actionError.didEngineStall = false;
-						actionError.errorReason = EActionErrorReason::GearsSkipped;
-						actionError.areValuesFilled = true;
-						actionErrorCaused.Broadcast(actionError);
-					}
-					previousGear = oldGear;
-					Super::SetTargetGear(GearNum, changeImmediately);
-					gearChanged.Broadcast(oldGear, GearNum, skippingGears);
-					UpdateVehicleEngineState();
-
-					if (GearNum < oldGear && GearNum>0)
-					{
-						isDownshift = true;
-					}
-
-					return true;
-				}
-			}
-
-			
-		}
-		else
-		{
-			FVehicleActionErrors actionError;
-			actionError.didEngineStall = false;
-			actionError.errorReason = EActionErrorReason::ChangeGearWithoutAppropriateClutch;
-			actionError.areValuesFilled = true;
-			actionErrorCaused.Broadcast(actionError);
-		}
-		return false;
 	}
 }
 
@@ -4632,7 +4419,17 @@ void UDynamicVehicleMovementComponent::BeginPlay()
 	vehicleNonFunctionalAspects.rightwiper.ExtractMeshComponent(GetOwner());
 
 	playerController = UGameplayStatics::GetPlayerController(GetWorld(),0);
+	if (TransmissionSetup.vehicleTransmissionType != ETransmissionType::Manual)
+		currentTransmissionRatio = 1;
+	TransmissionSetup.SetTransferCaseModifier(transferCaseConfig.GetTransferCaseRatio());
+	currentTransferCaseRatio = transferCaseConfig.GetTransferCaseRatio();
 
+	if (TransmissionSetup.vehicleTransmissionType == ETransmissionType::Manual && TransmissionSetup.bUseHighLowRatios)
+		maxGearLock = TransmissionSetup.ForwardGearRatios.Num();
+	else
+		maxGearLock = TransmissionSetup.ForwardGearRatiosSingular.Num(); 
+
+	derivedPtrForSimulationClass->dataImpactingSimulation.SetMaxGearLock(maxGearLock);
 }
 
 void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -4647,13 +4444,13 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 	float maxSpeedForGear = BIG_NUMBER;
 	if (currentGear > 0)
 	{
-		maxSpeedForGear = TransmissionSetup.GetMaximumSpeedForGear(currentGear - 1, true);
+		maxSpeedForGear = TransmissionSetup.GetMaximumSpeedForGear(currentGear , true);
 	}
 	else if (currentGear < 0)
 	{
-		maxSpeedForGear = TransmissionSetup.GetMaximumSpeedForGear(currentGear * -1 - 1, false);
+		maxSpeedForGear = TransmissionSetup.GetMaximumSpeedForGear(currentGear * -1 , false);
 	}
-	if (currentVehicleSpeed > maxSpeedForGear)
+	if (currentVehicleSpeed > maxSpeedForGear && maxSpeedForGear!=-1)
 	{
 		SetHandbrakeInput(true);
 		overRideSlopeBreak = true;
@@ -4675,15 +4472,34 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 	}
 	//gear based Breaking ends here ***************************
 
+	if (!TransmissionSetup.IsCurrentTransmissionModeManual() && currentEngineState != EEngineState::EngineOff)
+	{
+		if (currentGearCached != currentGear)
+		{
+			previousGear = currentGearCached;
+			currentGearCached = currentGear;
+
+			gearChanged.Broadcast(previousGear, currentGearCached, FMath::Abs(previousGear- currentGearCached)>1);
+
+			if (currentGearCached < previousGear)
+			{
+				isInDownshiftRPMMode = true;
+			}
+
+		}
+	}
+
+
 	//setting downshift status ********************************
 	//as a workaround for proper engine breaking effect on RPM even with RPM limited by fuel
-	if (derivedPtrForSimulationClass && isDownshift)
+	if (derivedPtrForSimulationClass && isInDownshiftRPMMode)
 	{
-		float tempVehicleRPM = derivedPtrForSimulationClass->GetCalculatedRPM_BasedOnFuelIntake();
+		
+		float tempVehicleRPM = derivedPtrForSimulationClass->GetCalculatedRPM(GetWheelSpeeds()[0]);
 		float EngineRPM = PVehicleOutput->EngineRPM;
 		if (EngineRPM <= tempVehicleRPM)
 		{
-			isDownshift = false;
+			isInDownshiftRPMMode = false;
 		}
 	}
 	//setting downshift status ends here ***********************
@@ -4702,7 +4518,7 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 	}
 	//set Accelerate/Decelerate Bool ends here *****************
 
-	//Action Error check when Engine Engaged *******************
+	//Action Error check when Engine Engaged + Engine Update *******************
 	if (currentEngineState == EEngineState::EngineEngaged)
 	{
 		UpdateVehicleEngineState();
@@ -4733,7 +4549,11 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 		}
 
 	}
-	//Action Error check when Engine Engaged ends here **********
+	else if(TransmissionSetup.vehicleTransmissionType != ETransmissionType::Manual && GetCurrentActiveGear()!=0 && currentEngineStartedValue)
+	{
+		UpdateVehicleEngineState();
+	}
+	//Action Error check when Engine Engaged + Engine Update ends here **********
 
 	//Precautionary throttle to 0, when engine state off, since engine is never truly off in chaos vehicles *******************
 	if (currentEngineState == EEngineState::EngineOff || currentEngineState == EEngineState::EngineIdle)
@@ -4743,21 +4563,18 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 	//ends here *******************
 
 	//Transferring data to simulation class here *******************
-	if (vehicleFunctionalities.vehicleHasManualFuelHandle)
+	if (currentEngineState != EEngineState::EngineOff && currentEngineStartedValue!= false)
 	{
-		if (currentEngineState != EEngineState::EngineOff)
+		if (derivedPtrForSimulationClass)
 		{
-			if (derivedPtrForSimulationClass)
-			{
-				derivedPtrForSimulationClass->dataImpactingSimulation.FillData(GetNetFuelIntake(),isDownshift, GetVehicleSpeedInKM_PerHour(), currentTransmissionRatio, currentInputs.currentGasPedalValue > gasPedalMinValue, currentInputs.currentBreakAssistValue);
-			}
+			derivedPtrForSimulationClass->dataImpactingSimulation.FillData(GetNetFuelIntake(),isInDownshiftRPMMode, GetVehicleSpeedInKM_PerHour(), currentTransmissionRatio, currentInputs.currentGasPedalValue > gasPedalMinValue, currentInputs.currentBreakAssistValue);
 		}
-		else
+	}
+	else
+	{
+		if (derivedPtrForSimulationClass)
 		{
-			if (derivedPtrForSimulationClass)
-			{
-				derivedPtrForSimulationClass->dataImpactingSimulation.isEngineStarted = false;
-			}
+			derivedPtrForSimulationClass->dataImpactingSimulation.isEngineStarted = false;
 		}
 	}
 	//ends here *******************
@@ -4799,9 +4616,9 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 			 currentGear = GetCurrentActiveGear();
 			 maxSpeedForGear = BIG_NUMBER;
 			if(currentGear>0)
-				 maxSpeedForGear = TransmissionSetup.GetMaximumSpeedForGear(currentGear-1, true);
+				 maxSpeedForGear = TransmissionSetup.GetMaximumSpeedForGear(currentGear, true);
 			else if (currentGear<0)
-				maxSpeedForGear = TransmissionSetup.GetMaximumSpeedForGear(currentGear*-1 -1, false);
+				maxSpeedForGear = TransmissionSetup.GetMaximumSpeedForGear(currentGear*-1 , false);
 
 			float currSpeed = GetVehicleSpeedInKM_PerHour();
 			float currRPM = GetEngineRotationSpeed();
@@ -4820,7 +4637,7 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 						doOnceForDisableSlideConsoleCommand = false;
 
 
-						if (currSpeed > maxSpeedForGear)
+						if (currSpeed > maxSpeedForGear && maxSpeedForGear!=-1)
 						{
 							SetHandbrakeInput(true);
 							doOnceForEnableSlideConsoleCommand = true;
@@ -4869,7 +4686,7 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 
 void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
 {
-	if (TransmissionSetup.bUseAutomaticGears)
+	if (!(TransmissionSetup.vehicleTransmissionType == ETransmissionType::Manual))
 	{
 		EEngineState valueToSet = EEngineState::EngineOff; //we start with off, process down till all conditions are checked
 
@@ -4881,13 +4698,22 @@ void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
 		}
 		else
 		{
-			if (GetCurrentActiveGear()>0 || GetCurrentActiveGear() < 0)
+			int gear = GetCurrentActiveGear();
+			if (gear >0 || gear < 0)
 			{
 				valueToSet = EEngineState::EngineEngaged;
 			}
-			else
+			else if(gear==0)
 			{
 				valueToSet = EEngineState::EngineIdle;
+			}
+			else if(currentEngineState!= EEngineState::EngineEngaged)
+			{
+				valueToSet = EEngineState::EngineIdle;
+			}
+			else
+			{
+				valueToSet = EEngineState::EngineEngaged;
 			}
 		}
 		currentEngineState = valueToSet;
@@ -5361,7 +5187,8 @@ bool UDynamicVehicleMovementComponent::PlayHorn(USoundBase* newSound, bool play,
 	}
 	else
 	{
-		currentHornSound->Stop();
+		if(IsValid(currentHornSound))
+			currentHornSound->Stop();
 		return true;
 	}
 }
@@ -5449,7 +5276,7 @@ bool UDynamicVehicleMovementComponent::PlayRoadSound(USoundBase* newSound, bool 
 
 void UDynamicVehicleMovementComponent::ChangeTransmissionSystem(bool isAutomatic)
 {
-	if (isVehicleAutomatic)
+	if (!TransmissionSetup.IsCurrentTransmissionModeManual())
 	{
 		if (isAutomatic)
 		{
@@ -5457,16 +5284,24 @@ void UDynamicVehicleMovementComponent::ChangeTransmissionSystem(bool isAutomatic
 		}
 		else
 		{
-			isVehicleAutomatic = false;
+			TransmissionSetup.SetTransmissionMode(true);
 			SetUseAutomaticGears(false);
+			if (derivedPtrForSimulationClass)
+			{
+				derivedPtrForSimulationClass->dataImpactingSimulation.transmissionData = TransmissionSetup;
+			}
 		}
 	}
 	else
 	{
 		if (isAutomatic)
 		{
-			isVehicleAutomatic = true;
+			TransmissionSetup.SetTransmissionMode(false);
 			SetUseAutomaticGears(true);
+			if (derivedPtrForSimulationClass)
+			{
+				derivedPtrForSimulationClass->dataImpactingSimulation.transmissionData = TransmissionSetup;
+			}
 		}
 		else
 			return;
