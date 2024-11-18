@@ -28,6 +28,7 @@
 #include "PBDRigidsSolver.h"
 #include "Kismet/GameplayStatics.h"
 #include "Components/SpotLightComponent.h"
+#include "TimerManager.h"
 #include "Components/LightComponent.h"
 
 
@@ -483,6 +484,7 @@ void UDynamicVehicleSimulation::ApplyWheelFrictionForces(float DeltaTime)
 			PWheel.SetVehicleGroundSpeed(SteerLocalWheelVelocity);
 			PWheel.Simulate(DeltaTime);
 
+			// Friction force calculations
 			float RotationAngle = FMath::RadiansToDegrees(PWheel.GetAngularPosition());
 			FVector FrictionForceLocal = PWheel.GetForceFromFriction();
 			FrictionForceLocal = SteeringRotator.RotateVector(FrictionForceLocal);
@@ -504,32 +506,6 @@ void UDynamicVehicleSimulation::ApplyWheelFrictionForces(float DeltaTime)
 				AddForceAtPosition(FrictionForceVector, HitResult.ImpactPoint);
 			}
 
-#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
-			if (DynWheeledVehicleDebugParams.ShowWheelForces)
-			{
-				// show longitudinal drive force
-				if (PWheel.AvailableGrip > 0.0f)
-				{
-					float Radius = 50.0f;
-					float Scaling = 50.0f / PWheel.AvailableGrip;
-
-					FVector Center = WheelState.WheelWorldLocation[WheelIdx];
-					FVector Offset(0.0f, WheelState.WheelLocalLocation[WheelIdx].Y, 10.f);
-					Offset = Mat.TransformVector(Offset);
-
-					FDebugDrawQueue::GetInstance().DrawDebugLine(Center, Center + GroundZVector * 100.f, FColor::Orange, false, -1.0f, 0, 2);
-
-					Center += Offset;
-					FVector InputForceVectorWorld = Mat.TransformVector(PWheel.InputForces);
-					FDebugDrawQueue::GetInstance().DrawDebugCircle(Center, Radius, 60, FColor::White, false, -1.0f, 0, 3, FVector(1, 0, 0), FVector(0, 1, 0), false);
-					FDebugDrawQueue::GetInstance().DrawDebugLine(Center, Center + InputForceVectorWorld * Scaling, (PWheel.bClipping ? FColor::Red : FColor::Green), false, -1.0f, 0, PWheel.bClipping ? 2 : 4);
-					FDebugDrawQueue::GetInstance().DrawDebugLine(Center, Center + FrictionForceVector * Scaling, FColor::Yellow, false, -1.0f, 1, PWheel.bClipping ? 4 : 2);
-
-				}
-
-			}
-#endif
-
 		}
 		else
 		{
@@ -537,9 +513,101 @@ void UDynamicVehicleSimulation::ApplyWheelFrictionForces(float DeltaTime)
 			PWheel.SetWheelLoadForce(0.f);
 			PWheel.Simulate(DeltaTime);
 		}
+	}
+	PostProcessDifferentialLocking();
 
+}
+
+void UDynamicVehicleSimulation::PostProcessDifferentialLocking()
+{
+	using namespace Chaos;
+
+	// Step 1: Calculate average Omega values based on the differential mode and system
+	float frontOmega = 0.f;
+	float rearOmega = 0.f;
+	int frontWheelCount = 0;
+	int rearWheelCount = 0;
+
+	for (int WheelIdx = 0; WheelIdx < PVehicle->Wheels.Num(); WheelIdx++)
+	{
+		auto& PWheel = PVehicle->Wheels[WheelIdx];
+		if (PWheel.Setup().AxleType == FSimpleWheelConfig::Front)
+		{
+			frontOmega += PWheel.GetAngularVelocity();
+			frontWheelCount++;
+		}
+		else if (PWheel.Setup().AxleType == FSimpleWheelConfig::Rear)
+		{
+			rearOmega += PWheel.GetAngularVelocity();
+			rearWheelCount++;
+		}
+	}
+
+	float averageFrontOmega = frontWheelCount > 0 ? frontOmega / frontWheelCount : 0.f;
+	float averageRearOmega = rearWheelCount > 0 ? rearOmega / rearWheelCount : 0.f;
+
+	float SmoothingFactor = 0.1f; // Smoothing factor for Omega adjustments
+	float SlipAllowance = 0.05f;  // Allow a small amount of slip for realism
+
+	// Step 2: Apply post-processing based on the differential mode
+	if (currentDifferentialMode == EDynamicDifferentialModes::AllDifferentials)
+	{
+		// Lock all wheels to the same Omega (average of all), with smoothing and slip allowance
+		float overallAverageOmega = (frontWheelCount * averageFrontOmega + rearWheelCount * averageRearOmega) / (frontWheelCount + rearWheelCount);
+		for (int WheelIdx = 0; WheelIdx < PVehicle->Wheels.Num(); WheelIdx++)
+		{
+			auto& PWheel = PVehicle->Wheels[WheelIdx];
+			if (PWheel.EngineEnabled)
+			{
+				float smoothedOmega = FMath::Lerp(PWheel.GetAngularVelocity(), overallAverageOmega, SmoothingFactor);
+				float slipAdjustedOmega = smoothedOmega * (1.0f + FMath::RandRange(-SlipAllowance, SlipAllowance));
+				PWheel.SetAngularVelocity(slipAdjustedOmega);
+			}
+		}
+	}
+	else if (currentDifferentialMode == EDynamicDifferentialModes::RearDifferentialLock)
+	{
+		// Lock only the rear wheels to the same Omega (average of rear wheels), with smoothing and slip allowance
+		for (int WheelIdx = 0; WheelIdx < PVehicle->Wheels.Num(); WheelIdx++)
+		{
+			auto& PWheel = PVehicle->Wheels[WheelIdx];
+			if (PWheel.Setup().AxleType == FSimpleWheelConfig::Rear)
+			{
+				float smoothedOmega = FMath::Lerp(PWheel.GetAngularVelocity(), averageRearOmega, SmoothingFactor);
+				float slipAdjustedOmega = smoothedOmega * (1.0f + FMath::RandRange(-SlipAllowance, SlipAllowance));
+				PWheel.SetAngularVelocity(slipAdjustedOmega);
+			}
+		}
+	}
+	else if (currentDifferentialMode == EDynamicDifferentialModes::InterAxleLock)
+	{
+		// Ensure average of rear axle equals average of front axle, but keep individual wheels on each axle independent
+		float interAxleOmega = (averageFrontOmega + averageRearOmega) / 2;
+
+		for (int WheelIdx = 0; WheelIdx < PVehicle->Wheels.Num(); WheelIdx++)
+		{
+			auto& PWheel = PVehicle->Wheels[WheelIdx];
+			if (PWheel.Setup().AxleType == FSimpleWheelConfig::Front)
+			{
+				float adjustmentFactor = averageFrontOmega != 0 ? interAxleOmega / averageFrontOmega : 1.0f;
+				float smoothedOmega = FMath::Lerp(PWheel.GetAngularVelocity(), PWheel.GetAngularVelocity() * adjustmentFactor, SmoothingFactor);
+				PWheel.SetAngularVelocity(smoothedOmega);
+			}
+			else if (PWheel.Setup().AxleType == FSimpleWheelConfig::Rear)
+			{
+				float adjustmentFactor = averageRearOmega != 0 ? interAxleOmega / averageRearOmega : 1.0f;
+				float smoothedOmega = FMath::Lerp(PWheel.GetAngularVelocity(), PWheel.GetAngularVelocity() * adjustmentFactor, SmoothingFactor);
+				PWheel.SetAngularVelocity(smoothedOmega);
+			}
+		}
+	}
+	else if (currentDifferentialMode == EDynamicDifferentialModes::OpenDifferential)
+	{
+		// No locking, wheels operate independently
 	}
 }
+
+
 
 void UDynamicVehicleSimulation::ApplySuspensionForces(float DeltaTime, TArray<FWheelTraceParams>& WheelTraceParams)
 {
@@ -747,18 +815,6 @@ void UDynamicVehicleSimulation::ApplyInput(const FControlInputs& ControlInputs, 
 		}
 		else
 		{
-			if (dataImpactingSimulation.isFilled)
-			{
-				/*if (ModifiedInputs.ThrottleInput == 0 && targetRPM_BasedOnFuel != dataImpactingSimulation.engineData.EngineIdleRPM && targetRPM_BasedOnFuel!=0)
-				{
-					PEngine.SetThrottle(1);
-					ModifiedInputs.ThrottleInput = 1;
-				}
-				else*/
-					PEngine.SetThrottle(ModifiedInputs.ThrottleInput * ModifiedInputs.ThrottleInput);
-
-			}
-			else
 				PEngine.SetThrottle(ModifiedInputs.ThrottleInput * ModifiedInputs.ThrottleInput);
 		}
 
@@ -842,6 +898,129 @@ bool UDynamicVehicleSimulation::IsWheelSpinning() const
 	return false;
 }
 
+//void UDynamicVehicleSimulation::ProcessMechanicalSimulation(float DeltaTime)
+//{
+//	using namespace Chaos;
+//
+//	if (PVehicle->HasEngine())
+//	{
+//		auto& PEngine = PVehicle->GetEngine();
+//		auto& PTransmission = PVehicle->GetTransmission();
+//		auto& PDifferential = PVehicle->GetDifferential();
+//
+//		float WheelRPM = 0;
+//		for (int I = 0; I < PVehicle->Wheels.Num(); I++)
+//		{
+//			if (PVehicle->Wheels[I].EngineEnabled)
+//			{
+//				WheelRPM = FMath::Abs(PVehicle->Wheels[I].GetWheelRPM());
+//			}
+//		}
+//
+//		float WheelSpeedRPM = FMath::Abs(PTransmission.GetEngineRPMFromWheelRPM(WheelRPM));
+//		float targetRPM = dataImpactingSimulation.engineData.EngineIdleRPM, maxAllowableRPM = dataImpactingSimulation.engineData.MaxRPM;
+//		//Adjust RPM based on wheel RPM and fuel intake
+//		if (dataImpactingSimulation.isFilled )
+//		{
+//			bool bypassMaxCheck = false;
+//			float engineMaxRPM = dataImpactingSimulation.engineData.MaxRPM;
+//
+//			maxAllowableRPM = GetCalculatedRPM(WheelRPM);
+//			targetRPM_BasedOnFuel = maxAllowableRPM;
+//	
+//			if (PTransmission.GetEngineRPMFromWheelRPM(WheelRPM) >= dataImpactingSimulation.engineData.EngineIdleRPM)
+//			{
+//				if (dataImpactingSimulation.isDownShifting || !dataImpactingSimulation.isThrottleActive)
+//				{
+//					bypassMaxCheck = true;
+//				}
+//			}
+//			targetRPM = targetRPM_BasedOnFuel;
+//			
+//
+//			if (maxAllowableRPM == dataImpactingSimulation.engineData.MaxRPM)
+//				maxAllowableRPM = maxAllowableRPM - 1;
+//			if (!bypassMaxCheck)
+//			{
+//				float maxRPMChangeRate = dataImpactingSimulation.engineData.RPM_IncreasRate;
+//				float currentRPM = PEngine.GetEngineRPM();
+//				float rpmDifference = targetRPM - currentRPM;
+//
+//
+//				if (rpmDifference < 0)
+//					maxRPMChangeRate = 10;
+//				targetRPM = currentRPM + FMath::Sign(rpmDifference) * maxRPMChangeRate;
+//			}
+//
+//			if (targetRPM > maxAllowableRPM && !bypassMaxCheck)
+//			{
+//				targetRPM = maxAllowableRPM;
+//			}
+//			if (targetRPM < dataImpactingSimulation.engineData.EngineIdleRPM)
+//			{
+//				targetRPM = dataImpactingSimulation.engineData.EngineIdleRPM;
+//			}
+//
+//
+//			PEngine.SetEngineRPM(false, targetRPM);
+//		
+//			
+//		}
+//		else
+//		{
+//			PEngine.SetEngineRPM(PTransmission.IsOutOfGear(), PTransmission.GetEngineRPMFromWheelRPM(WheelRPM));
+//		}
+//
+//		PEngine.Simulate(DeltaTime);
+//
+//		PTransmission.SetEngineRPM(PEngine.GetEngineRPM()); // needs engine RPM to decide when to change gear (automatic gearbox)
+//		PTransmission.SetAllowedToChangeGear(!VehicleState.bVehicleInAir && !IsWheelSpinning());
+//		float GearRatio = PTransmission.GetGearRatio(PTransmission.GetCurrentGear());
+//
+//		PTransmission.Simulate(DeltaTime);
+//		
+//		float TransmissionTorque;
+//		if (dataImpactingSimulation.isFilled && false)
+//		{
+//			if (PTransmission.GetCurrentGear() != 0 && PEngine.GetEngineTorque() == 0)
+//			{
+//				TransmissionTorque = PTransmission.GetTransmissionTorque(PEngine.GetTorqueFromRPM());
+//			}
+//			else
+//			{
+//				TransmissionTorque = PTransmission.GetTransmissionTorque(PEngine.GetEngineTorque());
+//
+//			}
+//		}
+//		else
+//			TransmissionTorque = PTransmission.GetTransmissionTorque(PEngine.GetEngineTorque());
+//
+//
+//		if (WheelSpeedRPM > PEngine.Setup().MaxRPM)
+//		{
+//			TransmissionTorque = 0.f;
+//		}
+//		// apply drive torque to wheels
+//		for (int WheelIdx = 0; WheelIdx < PVehicle->Wheels.Num(); WheelIdx++)
+//		{
+//			auto& PWheel = PVehicle->Wheels[WheelIdx];
+//			if (PWheel.Setup().EngineEnabled)
+//			{
+//				float modificationFactor = 1;
+//				if (dataImpactingSimulation.isFilled)
+//					modificationFactor = dataImpactingSimulation.driveTorqueIncreaseFactor;
+//				PWheel.SetDriveTorque(TorqueMToCm(TransmissionTorque)* PWheel.Setup().TorqueRatio * modificationFactor);
+//				
+//			}
+//			else
+//			{
+//				PWheel.SetDriveTorque(0.f);
+//			}
+//		}
+//
+//	}
+//}
+
 void UDynamicVehicleSimulation::ProcessMechanicalSimulation(float DeltaTime)
 {
 	using namespace Chaos;
@@ -863,15 +1042,14 @@ void UDynamicVehicleSimulation::ProcessMechanicalSimulation(float DeltaTime)
 
 		float WheelSpeedRPM = FMath::Abs(PTransmission.GetEngineRPMFromWheelRPM(WheelRPM));
 		float targetRPM = dataImpactingSimulation.engineData.EngineIdleRPM, maxAllowableRPM = dataImpactingSimulation.engineData.MaxRPM;
-		//Adjust RPM based on wheel RPM and fuel intake
-		if (dataImpactingSimulation.isFilled )
+		if (dataImpactingSimulation.isFilled)
 		{
 			bool bypassMaxCheck = false;
 			float engineMaxRPM = dataImpactingSimulation.engineData.MaxRPM;
 
 			maxAllowableRPM = GetCalculatedRPM(WheelRPM);
 			targetRPM_BasedOnFuel = maxAllowableRPM;
-	
+
 			if (PTransmission.GetEngineRPMFromWheelRPM(WheelRPM) >= dataImpactingSimulation.engineData.EngineIdleRPM)
 			{
 				if (dataImpactingSimulation.isDownShifting || !dataImpactingSimulation.isThrottleActive)
@@ -880,7 +1058,7 @@ void UDynamicVehicleSimulation::ProcessMechanicalSimulation(float DeltaTime)
 				}
 			}
 			targetRPM = targetRPM_BasedOnFuel;
-			
+
 
 			if (maxAllowableRPM == dataImpactingSimulation.engineData.MaxRPM)
 				maxAllowableRPM = maxAllowableRPM - 1;
@@ -907,8 +1085,8 @@ void UDynamicVehicleSimulation::ProcessMechanicalSimulation(float DeltaTime)
 
 
 			PEngine.SetEngineRPM(false, targetRPM);
-		
-			
+
+
 		}
 		else
 		{
@@ -922,7 +1100,7 @@ void UDynamicVehicleSimulation::ProcessMechanicalSimulation(float DeltaTime)
 		float GearRatio = PTransmission.GetGearRatio(PTransmission.GetCurrentGear());
 
 		PTransmission.Simulate(DeltaTime);
-		
+
 		float TransmissionTorque;
 		if (dataImpactingSimulation.isFilled && false)
 		{
@@ -933,7 +1111,6 @@ void UDynamicVehicleSimulation::ProcessMechanicalSimulation(float DeltaTime)
 			else
 			{
 				TransmissionTorque = PTransmission.GetTransmissionTorque(PEngine.GetEngineTorque());
-
 			}
 		}
 		else
@@ -944,24 +1121,122 @@ void UDynamicVehicleSimulation::ProcessMechanicalSimulation(float DeltaTime)
 		{
 			TransmissionTorque = 0.f;
 		}
-		// apply drive torque to wheels
-		for (int WheelIdx = 0; WheelIdx < PVehicle->Wheels.Num(); WheelIdx++)
+
+		float modificationFactor = 1;
+		if (dataImpactingSimulation.isFilled)
 		{
-			auto& PWheel = PVehicle->Wheels[WheelIdx];
-			if (PWheel.Setup().EngineEnabled)
-			{
-				float modificationFactor = 1;
-				if (dataImpactingSimulation.isFilled)
-					modificationFactor = dataImpactingSimulation.driveTorqueIncreaseFactor;
-				PWheel.SetDriveTorque(TorqueMToCm(TransmissionTorque)* PWheel.Setup().TorqueRatio * modificationFactor);
-				
-			}
-			else
-			{
-				PWheel.SetDriveTorque(0.f);
-			}
+			modificationFactor = dataImpactingSimulation.driveTorqueIncreaseFactor;
 		}
 
+
+		if (currentDifferentialSystem == EDynamicVehicleDifferential::RearWheelDrive)
+		{
+			// Only apply torque to rear wheels
+			for (int WheelIdx = 0; WheelIdx < PVehicle->Wheels.Num(); WheelIdx++)
+			{
+				auto& PWheel = PVehicle->Wheels[WheelIdx];
+				if (PWheel.Setup().AxleType == FSimpleWheelConfig::Rear && PWheel.EngineEnabled)
+				{
+					PWheel.SetDriveTorque(TorqueMToCm(TransmissionTorque) * PWheel.Setup().TorqueRatio * modificationFactor);
+				}
+				else
+				{
+					PWheel.SetDriveTorque(0.f);
+				}
+			}
+		}
+		else if (currentDifferentialSystem == EDynamicVehicleDifferential::FrontWheelDrive)
+		{
+			// Only apply torque to front wheels
+			for (int WheelIdx = 0; WheelIdx < PVehicle->Wheels.Num(); WheelIdx++)
+			{
+				auto& PWheel = PVehicle->Wheels[WheelIdx];
+				if (PWheel.Setup().AxleType == FSimpleWheelConfig::Front && PWheel.EngineEnabled)
+				{
+					PWheel.SetDriveTorque(TorqueMToCm(TransmissionTorque) * PWheel.Setup().TorqueRatio * modificationFactor);
+				}
+				else
+				{
+					PWheel.SetDriveTorque(0.f);
+				}
+			}
+		}
+		else if (currentDifferentialSystem == EDynamicVehicleDifferential::AllWheelDrive)
+		{
+			float frontSlip = 0.f;
+			float rearSlip = 0.f;
+			int frontWheelCount = 0;
+			int rearWheelCount = 0;
+
+			for (int WheelIdx = 0; WheelIdx < PVehicle->Wheels.Num(); WheelIdx++)
+			{
+				auto& PWheel = PVehicle->Wheels[WheelIdx];
+				if (PWheel.Setup().AxleType == FSimpleWheelConfig::Front)
+				{
+					frontSlip += PWheel.GetSlipMagnitude();
+					frontWheelCount++;
+				}
+				else if (PWheel.Setup().AxleType == FSimpleWheelConfig::Rear)
+				{
+					rearSlip += PWheel.GetSlipMagnitude();
+					rearWheelCount++;
+				}
+			}
+
+			float totalSlip = frontSlip + rearSlip;
+			float frontBias = 0.5f;
+			float rearBias = 0.5f;
+
+			if (totalSlip > 1.0f)
+			{
+				frontBias = rearSlip / totalSlip; 
+				rearBias = frontSlip / totalSlip;  
+			}
+
+			float biasSum = (frontBias * frontWheelCount + rearBias * rearWheelCount) / (frontWheelCount + rearWheelCount);
+			frontBias /= biasSum;
+			rearBias /= biasSum;
+
+			if (!bTorqueLimiterInitialized)
+			{
+				TimeSinceStart = 0.0f;
+				TorqueRampUpTime = 2.0f;
+				bTorqueLimiterInitialized = true;
+			}
+			TimeSinceStart += DeltaTime;
+
+			float rampUpFactor = FMath::Clamp(TimeSinceStart / TorqueRampUpTime, 0.0f, 1.0f);
+			float limitedTransmissionTorque = rampUpFactor * TransmissionTorque;
+
+			for (int WheelIdx = 0; WheelIdx < PVehicle->Wheels.Num(); WheelIdx++)
+			{
+				auto& PWheel = PVehicle->Wheels[WheelIdx];
+				if (PWheel.EngineEnabled)
+				{
+					float accelerationMagnitude = FMath::Abs(VehicleState.ForwardSpeed);
+					if (accelerationMagnitude > AccelerationThreshold)
+					{
+						frontBias = FMath::Min(1.0f, frontBias + BiasAdjustmentRate * DeltaTime);
+						rearBias = FMath::Max(0.0f, rearBias - BiasAdjustmentRate * DeltaTime);
+					}
+
+					float adjustedModificationFactor = (PWheel.Setup().AxleType == FSimpleWheelConfig::Front) ? frontBias : rearBias;
+					float combinedModificationFactor = modificationFactor * adjustedModificationFactor;
+					PWheel.SetDriveTorque(TorqueMToCm(limitedTransmissionTorque) * PWheel.Setup().TorqueRatio * combinedModificationFactor);
+				}
+				else
+				{
+					PWheel.SetDriveTorque(0.f);
+				}
+			}
+		}
+		else if (currentDifferentialSystem == EDynamicVehicleDifferential::Undefined)
+		{
+			for (int WheelIdx = 0; WheelIdx < PVehicle->Wheels.Num(); WheelIdx++)
+			{
+				PVehicle->Wheels[WheelIdx].SetDriveTorque(0.f);
+			}
+		}
 	}
 }
 
@@ -1123,6 +1398,16 @@ float UDynamicVehicleSimulation::GetRelativeEngineRPM_FromSpeed(float currentSpe
 	}
 	return 0;
 
+}
+
+void UDynamicVehicleSimulation::SetDifferentialMode(EDynamicDifferentialModes newDifferentialMode)
+{
+	currentDifferentialMode = newDifferentialMode;
+}
+
+void UDynamicVehicleSimulation::SetDifferentialSystem(EDynamicVehicleDifferential newDifferentialSystem)
+{
+	currentDifferentialSystem = newDifferentialSystem;
 }
 
 float UDynamicVehicleSimulation::GetCalculatedRPM(float WheelRPM)
@@ -1675,6 +1960,17 @@ void UDynamicVehicleMovementComponent::ResetVehicleState()
 	{
 		State.bIsValid = false;
 	}
+}
+
+EDynamicDifferentialModes UDynamicVehicleMovementComponent::GetCurrentDifferentialMode()
+{
+	return currentDifferentialMode;
+}
+
+
+EDynamicVehicleDifferential UDynamicVehicleMovementComponent::GetCurrentDifferentialSystem()
+{
+	return IsUsingSystem1ForDifferential() ? DifferentialSetup.DifferentialTypeForSystem1 : DifferentialSetup.DifferentialTypeForSystem2;
 }
 
 void UDynamicVehicleMovementComponent::SetupVehicleShapes()
@@ -2690,6 +2986,46 @@ void UDynamicVehicleMovementComponent::PostEditChangeProperty(struct FPropertyCh
 		}
 	}
 
+	if (PropertyName == "defaultDifferentialMode")
+	{
+		if (vehicleFunctionalities.vehicleHasDifferenitalModes)
+		{
+			EDynamicVehicleDifferential diffsystem = GetCurrentDifferentialSystem();
+
+			if (diffsystem == EDynamicVehicleDifferential::AllWheelDrive)
+			{
+				if (currentDifferentialMode == EDynamicDifferentialModes::InterAxleLock || currentDifferentialMode == EDynamicDifferentialModes::AllDifferentials || currentDifferentialMode == EDynamicDifferentialModes::OpenDifferential || currentDifferentialMode == EDynamicDifferentialModes::RearDifferentialLock)
+				{
+					currentDifferentialMode = currentDifferentialMode;
+				}
+				else
+					currentDifferentialMode = EDynamicDifferentialModes::OpenDifferential;
+
+			}
+			else if (diffsystem == EDynamicVehicleDifferential::RearWheelDrive)
+			{
+				if (currentDifferentialMode == EDynamicDifferentialModes::RearDifferentialLock || currentDifferentialMode == EDynamicDifferentialModes::OpenDifferential)
+				{
+					currentDifferentialMode = currentDifferentialMode;
+				}
+				else
+					currentDifferentialMode = EDynamicDifferentialModes::OpenDifferential;
+
+			}
+			else if (diffsystem == EDynamicVehicleDifferential::FrontWheelDrive)
+			{
+				if (currentDifferentialMode == EDynamicDifferentialModes::OpenDifferential)
+				{
+					currentDifferentialMode = currentDifferentialMode;
+				}
+				else
+					currentDifferentialMode = EDynamicDifferentialModes::OpenDifferential;
+
+			}
+		}
+		else
+			currentDifferentialMode = EDynamicDifferentialModes::OpenDifferential;
+	}
 
 	if (editDefaultRanges)
 	{
@@ -2811,6 +3147,15 @@ bool UDynamicVehicleMovementComponent::CanEditChange(const FProperty* InProperty
 	{
 		return ParentVal && vehicleFunctionalities.vehicleHasTurboMode;
 	}
+	if (InProperty->GetFName() == "maxAngleAllowedLowGears")
+	{
+		return ParentVal && TransmissionSetup.bUseHighLowRatios;
+	}
+	
+	if (InProperty->GetFName() == "defaultDifferentialMode")
+	{
+		return ParentVal && vehicleFunctionalities.vehicleHasDifferenitalModes;
+	}
 	return ParentVal;
 }
 #endif
@@ -2914,6 +3259,12 @@ bool UDynamicVehicleMovementComponent::SetActiveSystemForDifferential(bool UseSy
 
 			CreateVehicle();
 			FixupSkeletalMesh();
+			if (derivedPtrForSimulationClass)
+			{
+				derivedPtrForSimulationClass->SetDifferentialSystem(useSystem1ForDifferential ? DifferentialSetup.DifferentialTypeForSystem1 : DifferentialSetup.DifferentialTypeForSystem2);
+				derivedPtrForSimulationClass->dataImpactingSimulation.SetMaxGearLock(maxGearLock);
+
+			}
 			return true;
 		}
 		else
@@ -2962,6 +3313,13 @@ bool UDynamicVehicleMovementComponent::SetTransferCasePosition(ETransferCasePosi
 			doOnceForLockedAxelError = true;
 			CreateVehicle();
 			FixupSkeletalMesh();
+
+			if (derivedPtrForSimulationClass)
+			{
+				derivedPtrForSimulationClass->dataImpactingSimulation.SetMaxGearLock(maxGearLock);
+				derivedPtrForSimulationClass->SetDifferentialSystem(GetCurrentDifferentialSystem());
+			}
+
 			return true;
 		}
 		else
@@ -3010,6 +3368,55 @@ bool UDynamicVehicleMovementComponent::CanChangeDifferentialSystem()
 	else
 		return false;
 }
+
+bool UDynamicVehicleMovementComponent::SetDifferentialMode(EDynamicDifferentialModes newMode)
+{
+	if (vehicleFunctionalities.vehicleHasDifferenitalModes)
+	{
+		EDynamicVehicleDifferential diffsystem = GetCurrentDifferentialSystem();
+
+		if (diffsystem == EDynamicVehicleDifferential::AllWheelDrive)
+		{
+			if (newMode == EDynamicDifferentialModes::InterAxleLock || newMode == EDynamicDifferentialModes::AllDifferentials || newMode == EDynamicDifferentialModes::OpenDifferential || newMode == EDynamicDifferentialModes::RearDifferentialLock)
+			{
+				currentDifferentialMode = newMode;
+			}
+			else
+				currentDifferentialMode = EDynamicDifferentialModes::OpenDifferential;
+
+		}
+		else if (diffsystem == EDynamicVehicleDifferential::RearWheelDrive)
+		{
+			if (newMode == EDynamicDifferentialModes::RearDifferentialLock || newMode == EDynamicDifferentialModes::OpenDifferential)
+			{
+				currentDifferentialMode = newMode;
+			}
+			else
+				currentDifferentialMode = EDynamicDifferentialModes::OpenDifferential;
+
+		}
+		else if (diffsystem == EDynamicVehicleDifferential::FrontWheelDrive)
+		{
+			if (newMode == EDynamicDifferentialModes::OpenDifferential)
+			{
+				currentDifferentialMode = newMode;
+			}
+			else
+				currentDifferentialMode = EDynamicDifferentialModes::OpenDifferential;
+
+		}
+	}
+	else
+		currentDifferentialMode = EDynamicDifferentialModes::OpenDifferential;
+
+	if (derivedPtrForSimulationClass)
+	{
+		derivedPtrForSimulationClass->SetDifferentialMode(currentDifferentialMode);
+	}
+	return false;
+}
+
+
 
 bool UDynamicVehicleMovementComponent::CanChangeTransferCasePosition()
 {
@@ -3230,7 +3637,7 @@ bool UDynamicVehicleMovementComponent::CanChangeGear()
 	}
 }
 
-bool UDynamicVehicleMovementComponent::SetNewGear(int GearNum, bool changeImmediately)
+bool UDynamicVehicleMovementComponent::SetNewGear(int GearNum, bool changeImmediately, bool forceChange)
 {
 	bool inputValueUpdated = false;
 	int oldGear = GetCurrentActiveGear();
@@ -3240,11 +3647,44 @@ bool UDynamicVehicleMovementComponent::SetNewGear(int GearNum, bool changeImmedi
 		inputValueUpdated = true;
 	}
 
-	if (!TransmissionSetup.IsCurrentTransmissionModeManual())
+	if (!TransmissionSetup.IsCurrentTransmissionModeManual() && !forceChange)
 	{
 		return false;
 	}
-	else
+	else if (!TransmissionSetup.IsCurrentTransmissionModeManual() && forceChange)
+	{
+		if (GearNum > 0 && GearNum > TransmissionSetup.ForwardGearRatiosSingular.Num())
+		{
+			return false;
+		}
+		else if (GearNum < 0 && (-1 * GearNum) > TransmissionSetup.ReverseGearRatiosSingular.Num())
+		{
+			return false;
+		}
+		else
+		{
+			if (GetCurrentActiveGear() != GearNum + 1 && GetCurrentActiveGear() != GearNum - 1 && GetCurrentActiveGear() != GearNum)
+			{
+				FVehicleActionErrors actionError;
+				actionError.didEngineStall = false;
+				actionError.errorReason = EActionErrorReason::GearsSkipped;
+				actionError.areValuesFilled = true;
+				actionErrorCaused.Broadcast(actionError);
+			}
+			previousGear = oldGear;
+			Super::SetTargetGear(GearNum, changeImmediately);
+			gearChanged.Broadcast(oldGear, GearNum, skippingGears);
+			UpdateVehicleEngineState();
+
+			if (GearNum < oldGear && GearNum>0)
+			{
+				isInDownshiftRPMMode = true;
+			}
+
+			return true;
+		}
+	}
+	else 
 	{
 		//Should be able to change gear when engine totally disengaged, within gear change range or in idle.
 		if (CanChangeGear())
@@ -3442,13 +3882,19 @@ FDynamicInputData UDynamicVehicleMovementComponent::GetCurrentInputData() const
 FTransform UDynamicVehicleMovementComponent::GetCenterOfMass(bool local)
 {
 	FTransform COMTransform;
-	if(local)
+	if (local)
+	{
 		COMTransform = FPhysicsInterface::GetComTransformLocal_AssumesLocked(this->GetBodyInstance()->ActorHandle);
+	}
 	else
+	{
 		COMTransform = FPhysicsInterface::GetComTransform_AssumesLocked(this->GetBodyInstance()->ActorHandle);
+	}
+
 	if (bEnableCenterOfMassOverride)
 	{
-		COMTransform.SetTranslation(CenterOfMassOverride + this->GetBodyInstance()->COMNudge);
+		FVector AdjustedCOM = COMTransform.GetTranslation() + CenterOfMassOverride + this->GetBodyInstance()->COMNudge;
+		COMTransform.SetTranslation(AdjustedCOM);
 	}
 	return COMTransform;
 }
@@ -4309,6 +4755,20 @@ float UDynamicVehicleMovementComponent::GetTurboModeIncreaseFactor()
 	return vehicleFunctionalities.vehicleHasTurboMode ? turboModeFactor : 0;
 }
 
+bool UDynamicVehicleMovementComponent::IsABS_InUse()
+{
+	bool retVal = false;
+
+	if (VehicleSimulationPT && VehicleSimulationPT->PVehicle && VehicleSimulationPT->PVehicle->Wheels.Num() > 0)
+	{
+		for (int i = 0; i < VehicleSimulationPT->PVehicle->Wheels.Num(); i++)
+		{
+			retVal = retVal || VehicleSimulationPT->PVehicle->Wheels[i].bABSActivated;
+		}
+	}
+	return retVal;
+}
+
 void UDynamicVehicleMovementComponent::SetTurboModeData(float duration, float increaseFactor)
 {
 	if (vehicleFunctionalities.vehicleHasTurboMode)
@@ -4429,7 +4889,21 @@ void UDynamicVehicleMovementComponent::BeginPlay()
 	else
 		maxGearLock = TransmissionSetup.ForwardGearRatiosSingular.Num(); 
 
-	derivedPtrForSimulationClass->dataImpactingSimulation.SetMaxGearLock(maxGearLock);
+	if (derivedPtrForSimulationClass)
+	{
+		derivedPtrForSimulationClass->dataImpactingSimulation.SetMaxGearLock(maxGearLock);
+		derivedPtrForSimulationClass->SetDifferentialSystem(GetCurrentDifferentialSystem());
+	}
+
+	SetDifferentialMode(DifferentialSetup.defaultDifferentialMode);
+	
+
+	for (int i =0; i<Wheels.Num(); i++)
+	{
+		SetABSEnabled(i, vehicleFunctionalities.vehicleHasABS);
+		
+	}
+
 }
 
 void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -4622,13 +5096,14 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 
 			float currSpeed = GetVehicleSpeedInKM_PerHour();
 			float currRPM = GetEngineRotationSpeed();
-			if (currentInputs.currentBreakPedalValue > breakPedalMinValue || (currRPM - EngineSetup.EngineIdleRPM > 1 && ((IsUsingHighGears()==false && slopeAngle < 30) || (IsUsingHighGears() && slopeAngle < 15))) || (currSpeed > maxSpeedForGear))
+			if (currentInputs.currentBreakPedalValue > breakPedalMinValue || (currRPM - EngineSetup.EngineIdleRPM > 1 && ((IsUsingHighGears()==false && slopeAngle < maxAngleAllowedLowGears) || (IsUsingHighGears() && slopeAngle < maxAngleAllowed))) || (currSpeed > maxSpeedForGear))
 			{
 				if (doOnceForDisableSlideConsoleCommand)
 				{
 					if (IsValid(playerController))
 					{
-						FString Command = FString::Printf(TEXT("p.Chaos.Suspension.SlopeThreshold 0"));
+						float cosValue = FMath::Cos(FMath::DegreesToRadians(IsUsingHighGears() ? maxAngleAllowed : maxAngleAllowedLowGears));
+						FString Command = FString::Printf(TEXT("p.Chaos.Suspension.SlopeThreshold %s"), *FString::SanitizeFloat(cosValue));
 
 						playerController->ConsoleCommand(Command);
 
@@ -4682,6 +5157,24 @@ void UDynamicVehicleMovementComponent::TickComponent(float DeltaTime, enum ELeve
 		}
 	}
 	//ends here *******************
+
+	//Fix for gear not changing in some diff modes for auto
+	if (!TransmissionSetup.IsCurrentTransmissionModeManual() && IsEngineStarted() && (currentDifferentialMode == EDynamicDifferentialModes::AllDifferentials || currentDifferentialMode == EDynamicDifferentialModes::RearDifferentialLock))
+	{
+		float newGear = 0;
+		float currRPM = GetEngineRotationSpeed();
+		int currGear = GetCurrentActiveGear();
+		if (currRPM > TransmissionSetup.ChangeUpRPM && currGear > 0)
+		{
+			newGear = GetCurrentActiveGear() + 1;
+			SetNewGear(newGear, true, true);
+		}
+		if (currRPM < TransmissionSetup.ChangeDownRPM && currGear > 0)
+		{
+			newGear = FMath::Clamp(GetCurrentActiveGear() - 1, 1, TransmissionSetup.ForwardGearRatios.Num() );
+			SetNewGear(newGear, true, true);
+		}
+	}
 }
 
 void UDynamicVehicleMovementComponent::UpdateVehicleEngineState()
@@ -5072,7 +5565,7 @@ bool UDynamicVehicleMovementComponent::ToggleBreakAssist(bool enableBreakAssist)
 	if (currentInputs.currentBreakAssistValue != enableBreakAssist)
 		inputValueUpdated = true;
 
-	if (vehicleFunctionalities.vehicleHasBreakAssist)
+	if (vehicleFunctionalities.vehicleHasBrakekAssist)
 	{
 		if (currentEngineState == EEngineState::EngineOff)
 		{

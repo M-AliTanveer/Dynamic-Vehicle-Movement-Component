@@ -3,10 +3,17 @@
 #include "CoreMinimal.h"
 #include "Components/LightComponent.h"
 #include "Sound/SoundBase.h"
+#include "PhysicsEngine/BodyInstance.h"
+#include "PhysicsProxy/SingleParticlePhysicsProxy.h"
+#include "Animation/AnimSequenceBase.h"
+#include "Components/SkeletalMeshComponent.h"
+
 #include "VehicleStructsAndEnums.generated.h"
 
 class UDynamicWheel;
-UENUM(BlueprintType)
+
+UENUM(BlueprintType, Category = "Dynamic Vehicle Movement Component|Errors")
+//Various Error caused by vehicle or player
 enum class EActionErrorReason : uint8
 {
 	NoGasOrClutch,
@@ -21,7 +28,8 @@ enum class EActionErrorReason : uint8
 	AttemptedToSetGearHigherThanMaxGearLock
 };
 
-UENUM(BlueprintType)
+UENUM(BlueprintType, Category = "Dynamic Vehicle Movement Component|Transmission System")
+//All Possible Trasnmission Systems of Vehicle
 enum class ETransmissionType 
 {
 	Automatic,	//Automatic Transmission with no clutch
@@ -29,16 +37,17 @@ enum class ETransmissionType
 	Hybrid		//Hybrid transmission changeable between auto and manual via buttons. No Clutch in manual mode
 };
 
-USTRUCT(BlueprintType)
+USTRUCT(BlueprintType, Category = "Dynamic Vehicle Movement Component|Errors")
+//Structure containing data of error caused
 struct DYNAMICVEHICLEMOVEMENT_API FVehicleActionErrors
 {
 
 	GENERATED_BODY() 
 	//what caused the error?
-	UPROPERTY(BlueprintReadWrite)
+	UPROPERTY(BlueprintReadWrite, Category = "Dynamic Vehicle Movement Component|Errors")
 	EActionErrorReason errorReason;
 	//Did error cause engine turn off? Example: Leaving clutch and accelerator while in gear
-	UPROPERTY(BlueprintReadWrite)
+	UPROPERTY(BlueprintReadWrite, Category = "Dynamic Vehicle Movement Component|Errors")
 	bool didEngineStall = false;
 
 	bool areValuesFilled = false;
@@ -48,25 +57,22 @@ struct DYNAMICVEHICLEMOVEMENT_API FVehicleActionErrors
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnVehicleActionError, FVehicleActionErrors, causingError);
 
-USTRUCT(BlueprintType)
+USTRUCT(BlueprintType, Category = "Dynamic Vehicle Movement Component|Wheels")
+//Wheel Setup structure
 struct DYNAMICVEHICLEMOVEMENT_API FDynamicWheelSetup
 {
 	GENERATED_BODY()
 
 	// The wheel class to use
-	UPROPERTY(EditAnywhere, Category = WheelSetup)
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Wheels")
 	TSubclassOf<UDynamicWheel> WheelClass;
 
 	// Bone name on mesh to create wheel at
-	//UPROPERTY(EditAnywhere, Category = WheelSetup)
-	//FName SteeringBoneName;
-
-	// Bone name on mesh to create wheel at
-	UPROPERTY(EditAnywhere, Category = WheelSetup)
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Wheels")
 	FName BoneName;
 
 	// Additional offset to give the wheels for this axle.
-	UPROPERTY(EditAnywhere, Category = WheelSetup)
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Wheels")
 	FVector AdditionalOffset;
 
 	FDynamicWheelSetup();
@@ -115,7 +121,8 @@ enum class EDynamicDebugPages
 	MaxDebugPages	// keep as last value
 };
 
-UENUM()
+UENUM(BlueprintType, Category = "Dynamic Vehicle Movement Component|Differential System")
+//All Possible vehicle Differential Systems (Drivetrains)
 enum class EDynamicVehicleDifferential : uint8
 {
 	Undefined,
@@ -124,10 +131,22 @@ enum class EDynamicVehicleDifferential : uint8
 	RearWheelDrive,
 };
 
-UENUM(BlueprintType)
+UENUM(BlueprintType, Category = "Dynamic Vehicle Movement Component|Differential System")
+//All possible vehicle Differenital Modes (Sub Systems of drivetrain)
+enum class EDynamicDifferentialModes : uint8
+{
+	OpenDifferential = 0 UMETA(DisplayName = "Open Differential", ToolTip = "Allows the wheels on the same axle to rotate at different speeds. This is the default mode for all drivetrains."),
+	InterAxleLock = 1 UMETA(DisplayName = "Inter-Axle Lock", ToolTip = "This mode links the front and rear axles, making them rotate together. This means all wheels turn simultaneously as one unit.\nNote: Only possible in All-Wheel Drive (AWD) ."),
+	RearDifferentialLock = 2 UMETA(DisplayName = "Rear Differential Lock", ToolTip = "In this mode, the rear wheels are locked together, so both turn at the same speed. This is helpful for challenging conditions on the rear wheels, like when they're slipping in mud or sand.\nNote: Only possible in Rear-Wheel Drive (RWD) and All-Wheel Drive (AWD)."),
+	AllDifferentials = 3 UMETA(DisplayName = "All Differentials", ToolTip = "This mode locks all four wheels and connects the front and rear axles, so all four wheels rotate simultaneously at the same speed.\nNote: Only possible in All-Wheel Drive (AWD).")
+};
+
+
+UENUM(BlueprintType, Category = "Dynamic Vehicle Movement Component|Engine")
+//All possible states of the engine
 enum class EEngineState: uint8
 {
-	//The vehicle is not running
+	//The vehicle is not running 
 	EngineOff,
 	//Vehicle is running and is in neutral gear
 	EngineIdle,
@@ -139,10 +158,8 @@ enum class EEngineState: uint8
 	EngineDisengaged
 };
 
-/**
- * Structure containing information about the status of a single wheel of the vehicle.
- */
-USTRUCT(BlueprintType)
+USTRUCT(BlueprintType, Category = "Dynamic Vehicle Movement Component|Wheels")
+//Structure containing information about the status of a single wheel of the vehicle.
 struct DYNAMICVEHICLEMOVEMENT_API FDynamicWheelStatus
 {
 	GENERATED_BODY()
@@ -247,7 +264,8 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicWheelStatus
 	bool bIsValid;
 };
 
-USTRUCT()
+USTRUCT(Category = "Dynamic Vehicle Movement Component|Wheels")
+//Differential System structure
 struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleDifferentialConfig
 {
 	GENERATED_USTRUCT_BODY()
@@ -258,20 +276,24 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleDifferentialConfig
 	}
 
 	/** Type of differential. */
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Differential System")
 	EDynamicVehicleDifferential DifferentialTypeForSystem1;
 
 	/** Ratio of torque split between front and rear (<0.5 means more to front, >0.5 means more to rear, works only with 4W type) */
-	UPROPERTY(EditAnywhere, meta = (ClampMin = "0.0", UIMin = "0.0", ClampMax = "1.0", UIMax = "1.0", EditCondition = "DifferentialTypeForSystem1==EDynamicVehicleDifferential::AllWheelDrive"))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Differential System", meta = (ClampMin = "0.0", UIMin = "0.0", ClampMax = "1.0", UIMax = "1.0", EditCondition = "DifferentialTypeForSystem1==EDynamicVehicleDifferential::AllWheelDrive"))
 	float FrontRearSplitForSystem1;
 
 	/** Type of differential */
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Differential System")
 	EDynamicVehicleDifferential DifferentialTypeForSystem2;
 
 	/** Ratio of torque split between front and rear (<0.5 means more to front, >0.5 means more to rear, works only with 4W type) */
-	UPROPERTY(EditAnywhere, meta = (ClampMin = "0.0", UIMin = "0.0", ClampMax = "1.0", UIMax = "1.0", EditCondition = "DifferentialTypeForSystem2==EDynamicVehicleDifferential::AllWheelDrive"))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Differential System", meta = (ClampMin = "0.0", UIMin = "0.0", ClampMax = "1.0", UIMax = "1.0", EditCondition = "DifferentialTypeForSystem2==EDynamicVehicleDifferential::AllWheelDrive"))
 	float FrontRearSplitForSystem2;
+
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Differential System")
+	//Default differential mode for vehicle if activated. If a mode is chosen that is incompatible with the active differnetial system, then open differential will be set
+	EDynamicDifferentialModes defaultDifferentialMode = EDynamicDifferentialModes::OpenDifferential;
 
 	const Chaos::FSimpleDifferentialConfig& GetPhysicsDifferentialConfig(bool getSystem1=true)
 	{
@@ -328,7 +350,8 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleDifferentialConfig
 	Chaos::FSimpleDifferentialConfig PDifferentialConfigforSystem2;
 };
 
-USTRUCT()
+USTRUCT(Category = "Dynamic Vehicle Movement Component|Engine")
+//Engine system structure
 struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleEngineConfig
 {
 	GENERATED_USTRUCT_BODY()
@@ -339,39 +362,39 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleEngineConfig
 	}
 
 	/** Torque [Normalized 0..1] for a given RPM */
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Engine")
 	FRuntimeFloatCurve TorqueCurve;
 
 	/** Max Engine Torque (Nm) is multiplied by TorqueCurve */
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Engine")
 	float MaxTorque;
 
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Engine")
 	//Should engine RPM be dependant on fuel input while rising? This means that RPM will only touch Max RPM if gas input is at max. 
 	bool RPM_DependsOnFuelInput = true;
 
 	/** Maximum revolutions per minute of the engine */
-	UPROPERTY(EditAnywhere, Category = Setup, meta = (ClampMin = "0.01", UIMin = "0.01"))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Engine", meta = (ClampMin = "0.01", UIMin = "0.01"))
 	float MaxRPM;
 
 	/** Idle RMP of engine then in neutral/stationary */
-	UPROPERTY(EditAnywhere, Category = Setup, meta = (ClampMin = "0.01", UIMin = "0.01"))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Engine", meta = (ClampMin = "0.01", UIMin = "0.01"))
 	float EngineIdleRPM;
 
 	/** Braking effect from engine, when throttle released */
-	UPROPERTY(EditAnywhere, Category = Setup)
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Engine")
 	float EngineBrakeEffect;
 
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Engine")
 	//How fast RPM Increases when its based on fuel input
 	float RPM_IncreasRate = 200;
 
 	/** Affects how fast the engine RPM speed up*/
-	UPROPERTY(EditAnywhere, Category = Setup, meta = (ClampMin = "0.01", UIMin = "0.01"))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Engine", meta = (ClampMin = "0.01", UIMin = "0.01"))
 	float EngineRevUpMOI;
 
 	/** Affects how fast the engine RPM slows down */
-	UPROPERTY(EditAnywhere, Category = Setup, meta = (ClampMin = "0.01", UIMin = "0.01"))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Engine", meta = (ClampMin = "0.01", UIMin = "0.01"))
 	float EngineRevDownRate;
 
 	const Chaos::FSimpleEngineConfig& GetPhysicsEngineConfig()
@@ -425,7 +448,8 @@ private:
 
 };
 
-USTRUCT(BlueprintType)
+USTRUCT(BlueprintType, Category = "Dynamic Vehicle Movement Component|Transmission System")
+//Structure defining Gears combo
 struct DYNAMICVEHICLEMOVEMENT_API FHighLowGearCombo
 {
 	GENERATED_USTRUCT_BODY()
@@ -455,21 +479,22 @@ struct DYNAMICVEHICLEMOVEMENT_API FHighLowGearCombo
 
 	
 	//Gear ratio to use when in High Ratio mode
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Transmission System")
 	float HighRatio = 0; 
 	//Gear ratio to use when in Low Ratio mode
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Transmission System")
 	float LowRatio = 0; 
 	//Minimum speed is used to calculate engine stall condition when niether throttle nor clutch is pressed appropriately.
-	UPROPERTY(EditAnywhere, AdvancedDisplay, Category = Setup)
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Transmission System", AdvancedDisplay)
 	float MinimumSpeed = 0; 
 	//Max Speed gear can reach
-	UPROPERTY(EditAnywhere, AdvancedDisplay, Category = Setup)
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Transmission System", AdvancedDisplay)
 	float MaximumSpeed = -1;
 
 };
 
-USTRUCT(BlueprintType)
+USTRUCT(BlueprintType, Category = "Dynamic Vehicle Movement Component|Transmission System")
+//Structure defining gears for transmission system
 struct DYNAMICVEHICLEMOVEMENT_API FSingularGearCombo
 {
 	GENERATED_USTRUCT_BODY()
@@ -491,22 +516,23 @@ struct DYNAMICVEHICLEMOVEMENT_API FSingularGearCombo
 
 
 	//Gear ratio to use
-	UPROPERTY(EditAnywhere, meta = (DisplayName="Ratio"))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Transmission System", meta = (DisplayName="Ratio"))
 	float RatioSingular = 0;
 	//Should we set a max speed and min speed for this gear?
-	UPROPERTY(EditAnywhere, meta = (DisplayName = "Use Speed Limitations?"))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Transmission System", meta = (DisplayName = "Use Speed Limitations?"))
 	bool useSpeedLimitations = true;
 	//Minimum speed is used to calculate engine stall condition when niether throttle nor clutch is pressed appropriately.
-	UPROPERTY(EditAnywhere, meta = (EditCondition = "useSpeedLimitations"))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Transmission System", meta = (EditCondition = "useSpeedLimitations"))
 	//Minimum speed beyond which engine stalls if gas pedal isnt pressed
 	float MinimumSpeed = 0;
-	UPROPERTY(EditAnywhere, meta = (EditCondition = "useSpeedLimitations"))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Transmission System", meta = (EditCondition = "useSpeedLimitations"))
 	//Max speed for this gear. -1 = No Max Speed
 	float MaximumSpeed = -1;
 
 };
 
-USTRUCT()
+USTRUCT(Category = "Dynamic Vehicle Movement Component|Transmission System")
+//Transmission System structure
 struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleTransmissionConfig
 {
 	GENERATED_USTRUCT_BODY()
@@ -518,7 +544,7 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleTransmissionConfig
 
 	friend class UDynamicleWheel;
 
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Transmission System")
 	//Vehicle Transmission Type
 	ETransmissionType vehicleTransmissionType;
 	
@@ -528,43 +554,43 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleTransmissionConfig
 	UPROPERTY()
 	bool bUseHighLowRatios = true;
 	
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Transmission System")
 	//The final ratio is multiplied by all gear ratios before the ratio is fed into the sytstem. Useful for changing affect of all gears together. 
 	float FinalRatio;
 
-	UPROPERTY(EditAnywhere, meta = (EditCondition = "vehicleTransmissionType==ETransmissionType::Manual&&bUseHighLowRatios", EditConditionHides))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Transmission System", meta = (EditCondition = "vehicleTransmissionType==ETransmissionType::Manual&&bUseHighLowRatios", EditConditionHides))
 	//Forward gear ratios if vehicle has changeable transmission system between high/low
 	TArray<FHighLowGearCombo> ForwardGearRatios;
 
-	UPROPERTY(EditAnywhere, meta = (EditCondition = "vehicleTransmissionType==ETransmissionType::Manual&&bUseHighLowRatios", EditConditionHides))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Transmission System", meta = (EditCondition = "vehicleTransmissionType==ETransmissionType::Manual&&bUseHighLowRatios", EditConditionHides))
 	//Reverse gear ratios if vehicle has changeable transmission system between high/low
 	TArray<FHighLowGearCombo> ReverseGearRatios;
 
-	UPROPERTY(EditAnywhere, meta = (EditCondition = "(vehicleTransmissionType==ETransmissionType::Manual || vehicleTransmissionType==ETransmissionType::Hybrid || vehicleTransmissionType==ETransmissionType::Automatic)&&!bUseHighLowRatios", EditConditionHides, DisplayName = "Forward Gear Ratios"))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Transmission System", meta = (EditCondition = "(vehicleTransmissionType==ETransmissionType::Manual || vehicleTransmissionType==ETransmissionType::Hybrid || vehicleTransmissionType==ETransmissionType::Automatic)&&!bUseHighLowRatios", EditConditionHides, DisplayName = "Forward Gear Ratios"))
 	//Forward gear ratios if vehicle has either Automatic/Hybrid transmission or Manual with changeable between high/low
 	TArray<FSingularGearCombo> ForwardGearRatiosSingular;
 
-	UPROPERTY(EditAnywhere, meta = (EditCondition = "(vehicleTransmissionType==ETransmissionType::Manual || vehicleTransmissionType==ETransmissionType::Hybrid || vehicleTransmissionType==ETransmissionType::Automatic)&&!bUseHighLowRatios", EditConditionHides, DisplayName = "Reverse Gear Ratios"))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Transmission System", meta = (EditCondition = "(vehicleTransmissionType==ETransmissionType::Manual || vehicleTransmissionType==ETransmissionType::Hybrid || vehicleTransmissionType==ETransmissionType::Automatic)&&!bUseHighLowRatios", EditConditionHides, DisplayName = "Reverse Gear Ratios"))
 	//Reverse gear ratios if vehicle has either Automatic/Hybrid transmission or Manual with changeable between high/low
 	TArray<FSingularGearCombo> ReverseGearRatiosSingular;
 
-	UPROPERTY(EditAnywhere, meta = (EditCondition = "vehicleTransmissionType==ETransmissionType::Manual"))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Transmission System", meta = (EditCondition = "vehicleTransmissionType==ETransmissionType::Manual"))
 	//Should vehicle stop immediately if no gas or clutch is pressed, or should it wait till minimum speed for current gear is reached?
 	bool instantStopOnNoGasOrClutch = false;
 
-	UPROPERTY(EditAnywhere, meta = (ClampMin = "0.0", UIMin = "0.0", EditCondition = "(vehicleTransmissionType==ETransmissionType::Automatic || vehicleTransmissionType==ETransmissionType::Hybrid)"))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Transmission System", meta = (ClampMin = "0.0", UIMin = "0.0", EditCondition = "(vehicleTransmissionType==ETransmissionType::Automatic || vehicleTransmissionType==ETransmissionType::Hybrid)"))
 	//Engine RPM at which gear up change ocurrs for automatic transmission
 	float ChangeUpRPM;
 
-	UPROPERTY(EditAnywhere, meta = (ClampMin = "0.0", UIMin = "0.0", EditCondition = "(vehicleTransmissionType==ETransmissionType::Automatic || vehicleTransmissionType==ETransmissionType::Hybrid)"))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Transmission System", meta = (ClampMin = "0.0", UIMin = "0.0", EditCondition = "(vehicleTransmissionType==ETransmissionType::Automatic || vehicleTransmissionType==ETransmissionType::Hybrid)"))
 	//Engine RPM at which gear down change ocurrs for automatic transmission
 	float ChangeDownRPM;
 
-	UPROPERTY(EditAnywhere, meta = (ClampMin = "0.0", UIMin = "0.0", EditCondition = "(vehicleTransmissionType==ETransmissionType::Automatic || vehicleTransmissionType==ETransmissionType::Hybrid)"))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Transmission System", meta = (ClampMin = "0.0", UIMin = "0.0", EditCondition = "(vehicleTransmissionType==ETransmissionType::Automatic || vehicleTransmissionType==ETransmissionType::Hybrid)"))
 	//Time it takes for gear change to occur in automatic transmission
 	float GearChangeTime;
 
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Transmission System")
 	/** Mechanical frictional losses mean transmission might operate at 0.94 (94% efficiency) */
 	float TransmissionEfficiency;
 
@@ -835,7 +861,8 @@ enum class EDynamicSteeringType : uint8
 	Ackermann,
 };
 
-UENUM()
+UENUM(Category = "Dynamic Vehicle Movement Component|Transmission System")
+//All possible Trasnfer Case Values
 enum class ETransferCasePosition : int8
 {
 	LowRatio = -1,	//Higher Torque, Lower Speed
@@ -843,7 +870,8 @@ enum class ETransferCasePosition : int8
 	HighRatio = 1	//Higher Speed, Lower Torque
 };
 
-USTRUCT()
+USTRUCT(Category = "Dynamic Vehicle Movement Component|Movement")
+//Vehicle Steering configuration structure
 struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleSteeringConfig
 {
 	GENERATED_USTRUCT_BODY()
@@ -856,22 +884,22 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleSteeringConfig
 	/** Single angle : both wheels steer by the same amount
 	 *  AngleRatio   : outer wheels on corner steer less than the inner ones by set ratio
 	 *  Ackermann	 : Ackermann steering principle is applied */
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Movement")
 	EDynamicSteeringType SteeringType;
 
 	//Only applies when AngleRatio is selected
-	UPROPERTY(EditAnywhere, meta = (EditCondition = "SteeringType==EDynamicSteeringType::AngleRatio"))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Movement", meta = (EditCondition = "SteeringType==EDynamicSteeringType::AngleRatio"))
 	float AngleRatio;
 
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Movement")
 	//Whether to use steer angle mentioned in wheels, or the one mentioned here
 	bool useOverrideSteerAngle = false; 
 
-	UPROPERTY(EditAnywhere, meta = (EditCondition = "useOverrideSteerAngle"))
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Movement", meta = (EditCondition = "useOverrideSteerAngle"))
 	//Wheel turn angle to override the angle mentioned in wheels
 	float overrideSteerAngle = 15;
 
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, Category = "Dynamic Vehicle Movement Component|Movement")
 	//Maximum steering versus forward speed (MPH)
 	FRuntimeFloatCurve SteeringCurve;
 
@@ -922,19 +950,20 @@ private:
 
 };
 
-USTRUCT(BlueprintType)
+USTRUCT(BlueprintType, Category = "Dynamic Vehicle Movement Component|Transmission System")
+//Trasnfer Case structure
 struct DYNAMICVEHICLEMOVEMENT_API FDyamicTransferCaseConfig 
 {
 	GENERATED_BODY()
 
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Transfer Case System", meta = (DisplayName = "Transfer Case Low Ratio", AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Transfer Case System", meta = (DisplayName = "Transfer Case Low Ratio", AllowPrivateAccess = "true"))
 	//Low Ratio for Transfer Case
 	float transferCaseLowRatio = 1.662;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Transfer Case System", meta = (DisplayName = "Transfer Case High Ratio", AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Transfer Case System", meta = (DisplayName = "Transfer Case High Ratio", AllowPrivateAccess = "true"))
 	//High Ratio for Transfer Case 
 	float transferCaseHighRatio = 0.917;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Transfer Case System", meta = (DisplayName = "Transfer Case Starting Position", AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Transfer Case System", meta = (DisplayName = "Transfer Case Starting Position", AllowPrivateAccess = "true"))
 	ETransferCasePosition transferCasePosition = ETransferCasePosition::HighRatio;
 
 	bool isTransferCaseActive = true;
@@ -993,55 +1022,63 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicWheelState
 	TArray<FHitResult> TraceResult;
 };
 
-USTRUCT(BlueprintType)
+USTRUCT(BlueprintType, Category = "Dynamic Vehicle Movement Component|Functionalities")
+//Vehicle Toggleable Functionalities
 struct DYNAMICVEHICLEMOVEMENT_API FDynamicFunctionalities
 {
 	GENERATED_BODY()
 
 	FDynamicFunctionalities()
 	{
-		vehicleHasBreakAssist = true;
+		vehicleHasBrakekAssist = true;
 		vehicleHasMultipleDifferentials = true;
 		vehicleHasHighLowGears = true;
 		vehicleHasManualFuelHandle = true;
 	}
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Break Assist?", AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Functionalities|Braking", meta = (DisplayName = "Vehicle has Break Assist?", AllowPrivateAccess = "true"))
 	//Does Vehicle have break assist capabilities?
-	bool vehicleHasBreakAssist = true;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Changeable Differential Systems?", AllowPrivateAccess = "true"))
+	bool vehicleHasBrakekAssist = true;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Functionalities|Braking", meta = (DisplayName = "Vehicle has Anti-lock Braking System?", AllowPrivateAccess = "true"))
+	//Does Vehicle have Anti-lock Braking System? Overrides ABS in wheel blueprints
+	bool vehicleHasABS = true;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Functionalities|Differential System", meta = (DisplayName = "Vehicle has Changeable Differential Systems?", AllowPrivateAccess = "true"))
 	//Does Vehicle have capability to change between the 2 differentials?
 	bool vehicleHasMultipleDifferentials = true;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Changeable Transmission System?", AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Functionalities|Differential System", meta = (DisplayName = "Vehicle has Changeable Differential Modes?", AllowPrivateAccess = "true"))
+	//Does Vehicle have various differential modes?
+	bool vehicleHasDifferenitalModes = false;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Functionalities|Transmission System", meta = (DisplayName = "Vehicle has Changeable Transmission System?", AllowPrivateAccess = "true"))
 	//Does Vehicle have high and low gear ratios for each gear? 
 	bool vehicleHasHighLowGears = true;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Manual Fuel Handle?", AllowPrivateAccess = "true"))
-	//Does Vehicle have high and low gear ratios for each gear? 
-	bool vehicleHasManualFuelHandle = true;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Transfer Case?", AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Functionalities|Transmission System", meta = (DisplayName = "Vehicle has Transfer Case?", AllowPrivateAccess = "true"))
 	//Does Vehicle have specific transfer case with differing ratios?
 	bool vehicleHasTransferCase = true;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle has Turbo Mode?", AllowPrivateAccess = "true"))
-	//Does the Vehicle have a turbo mode? Turbo Mode increases Drive Torque (affectively acceleration) on Wheels by a set factor for a set time which can be edited in default values.
-	bool vehicleHasTurboMode = false;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle Can Start in Gear?", AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Functionalities|Transmission System", meta = (DisplayName = "Vehicle Can Start in Gear?", AllowPrivateAccess = "true"))
 	//Allow vehicle to start if not in neutral (but clutch pressed). Default is true
 	bool vehicleCanStartWithoutNeutralGear = true;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Vehicle Should Slide on Slopes?", AllowPrivateAccess = "true"))
-	//Should vehicle auto slide on slopes or slow down to rest while on slope?
-	bool vehicleShouldSlideOnSlope = true;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Break Needed for Automatic Mode Shifts?", AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Functionalities|Transmission System", meta = (DisplayName = "Break Needed for Automatic Mode Shifts?", AllowPrivateAccess = "true"))
 	//Does the vehicle need the brakes to be pressed in order to change between Nuetral, Reverse and Drive in Automatic and Hybrid Modes
 	bool autoVehicleNeedsBreakPress = false;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities", meta = (DisplayName = "Should Engine Stall on Critical Action Mistakes?", AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Functionalities|Movement", meta = (DisplayName = "Vehicle has Manual Fuel Handle?", AllowPrivateAccess = "true"))
+	//Does Vehicle have high and low gear ratios for each gear? 
+	bool vehicleHasManualFuelHandle = true;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Functionalities|Movement", meta = (DisplayName = "Vehicle has Turbo Mode?", AllowPrivateAccess = "true"))
+	//Does the Vehicle have a turbo mode? Turbo Mode increases Drive Torque (affectively acceleration) on Wheels by a set factor for a set time which can be edited in default values.
+	bool vehicleHasTurboMode = false;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Functionalities|Movement", meta = (DisplayName = "Vehicle Should Slide on Slopes?", AllowPrivateAccess = "true"))
+	//Should vehicle auto slide on slopes or slow down to rest while on slope?
+	bool vehicleShouldSlideOnSlope = true;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Functionalities|Miscellanous", meta = (DisplayName = "Should Engine Stall on Critical Action Mistakes?", AllowPrivateAccess = "true"))
 	//There are certain action mistakes defined in EActionErrorReason enum. Should Engine stall when a critical mistake is made?
 	bool shouldEngineStallOnCriticalMistakes = false;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Functionalities|Non Functional Aspects", meta = (DisplayName = "Vehicle has Non Functional Aspects?", AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Functionalities|Non Functional Aspects", meta = (DisplayName = "Vehicle has Non Functional Aspects?", AllowPrivateAccess = "true"))
 	//Does Vehicle have non funcitonal aspects? (windscreen wipers etc)
 	bool vehicleHasNonFunctionalAspects = true;
 };
 
-USTRUCT(BlueprintType)
+USTRUCT(BlueprintType, Category = "Dynamic Vehicle Movement Component|Miscellanous")
+//Component reference structure for skelatal meshes based on name
 struct DYNAMICVEHICLEMOVEMENT_API FSkeletalMeshComponentReference :public FComponentReference
 {
 	GENERATED_BODY()
@@ -1071,7 +1108,8 @@ struct DYNAMICVEHICLEMOVEMENT_API FSkeletalMeshComponentReference :public FCompo
 	}
 };
 
-UENUM(BlueprintType)
+UENUM(BlueprintType, Category = "Dynamic Vehicle Movement Component|Miscellanous")
+//Possible wiper speeds
 enum class EWiperModes :uint8
 {
 	Off = 0,
@@ -1080,22 +1118,24 @@ enum class EWiperModes :uint8
 	IntermittentMode = 3
 };
 
-USTRUCT(BlueprintType)
+USTRUCT(BlueprintType, Category = "Dynamic Vehicle Movement Component|Functionalities")
+//Vehicle Toggleable visual/auditory functionalities
 struct DYNAMICVEHICLEMOVEMENT_API FDynamicNonFunctionalVehicleAspects
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Non Functional Aspects", meta = (DisplayName = "Vehicle Left Wiper Mesh", AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Non Functional Aspects", meta = (DisplayName = "Vehicle Left Wiper Mesh", AllowPrivateAccess = "true"))
 	FSkeletalMeshComponentReference leftWiper;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Non Functional Aspects", meta = (DisplayName = "Vehicle Right Wiper Mesh", AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Non Functional Aspects", meta = (DisplayName = "Vehicle Right Wiper Mesh", AllowPrivateAccess = "true"))
 	FSkeletalMeshComponentReference rightwiper;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Non Functional Aspects|Animations", meta = (DisplayName = "Wiper Movement Animation", AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Non Functional Aspects|Animations", meta = (DisplayName = "Wiper Movement Animation", AllowPrivateAccess = "true"))
 	//Will be played on both wipers
 	UAnimSequenceBase* wiperAnimation;
 
 };
 
-USTRUCT()
+USTRUCT(Category = "Dynamic Vehicle Movement Component|Simulation")
+//structure for data passing
 struct DYNAMICVEHICLEMOVEMENT_API FDynamicSimulationData
 {
 	GENERATED_BODY()
@@ -1223,58 +1263,59 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicSimulationData
 
 };
 
-USTRUCT(BlueprintType)
-//all inputs for vehicle bundled together
+USTRUCT(BlueprintType, Category = "Dynamic Vehicle Movement Component|Input")
+//All major input values for vehicle bundled together
 struct DYNAMICVEHICLEMOVEMENT_API FDynamicInputData 
 {
 	GENERATED_BODY()
 
-	UPROPERTY(BlueprintReadOnly,  meta = (DisplayName = "Gas Pedal Current Value", AllowPrivateAccess = "true"))
+	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Input",  meta = (DisplayName = "Gas Pedal Current Value", AllowPrivateAccess = "true"))
 	//gas pedal value ranges between 0 and 100 by default
 	float currentGasPedalValue = 0;
-	UPROPERTY(BlueprintReadOnly,  meta = (DisplayName = "Break Pedal Current Value", AllowPrivateAccess = "true"))
+	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Input",  meta = (DisplayName = "Break Pedal Current Value", AllowPrivateAccess = "true"))
 	//break pedal value ranges between 0 and 100 by default
 	float currentBreakPedalValue = 0;
-	UPROPERTY(BlueprintReadOnly,  meta = (DisplayName = "Clutch Pedal Current Value", AllowPrivateAccess = "true"))
+	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Input",  meta = (DisplayName = "Clutch Pedal Current Value", AllowPrivateAccess = "true"))
 	//clutch pedal value ranges between 0 and 100 by default
 	float currentClutchPedalValue = 0;
-	UPROPERTY(BlueprintReadOnly,  meta = (DisplayName = "Steering Wheel Current Value", AllowPrivateAccess = "true"))
+	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Input",  meta = (DisplayName = "Steering Wheel Current Value", AllowPrivateAccess = "true"))
 	//steering wheel value ranges between 0 and 100 by default, with 50 in middle, 0 for complete left turn and 100 for complete right turn
 	float currentSteeringWheelValue = 50;
-	UPROPERTY(BlueprintReadOnly,  meta = (DisplayName = "Is Handbreak Active?", AllowPrivateAccess = "true"))
+	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Input",  meta = (DisplayName = "Is Handbreak Active?", AllowPrivateAccess = "true"))
 	//handbreak value is true for active handbreak and false for inactive handbreak
 	bool currentHandbreakValue = false;
-	UPROPERTY(BlueprintReadOnly,  meta = (DisplayName = "Is Break Assist Active?", AllowPrivateAccess = "true"))
+	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Input",  meta = (DisplayName = "Is Break Assist Active?", AllowPrivateAccess = "true"))
 	//Break assist value is true for active break assist and false for inactive break assist
 	bool currentBreakAssistValue = false;
-	UPROPERTY(BlueprintReadOnly,  meta = (DisplayName = "Fuel Handle Current Value", AllowPrivateAccess = "true"))
+	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Input",  meta = (DisplayName = "Fuel Handle Current Value", AllowPrivateAccess = "true"))
 	//Fuel handle value ranges between 0 and 100 by default and determines fuel intake into engine wihtout gas pedal.
 	float currentFuelHandleValue = 0;
-	UPROPERTY(BlueprintReadOnly, meta = (DisplayName = "Vehicle Wipe Current Mode", AllowPrivateAccess = "true"))
+	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Input", meta = (DisplayName = "Vehicle Wipe Current Mode", AllowPrivateAccess = "true"))
 	EWiperModes currentWiperMode = EWiperModes::Off;
-	UPROPERTY(BlueprintReadOnly, meta = (DisplayName = "Vehicle HeadLights active?", AllowPrivateAccess = "true"))
+	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Input", meta = (DisplayName = "Vehicle HeadLights active?", AllowPrivateAccess = "true"))
 	bool vehicleHeadLightsOn = false;
-	UPROPERTY(BlueprintReadOnly, meta = (DisplayName = "Vehicle Foglights active?", AllowPrivateAccess = "true"))
+	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Input", meta = (DisplayName = "Vehicle Foglights active?", AllowPrivateAccess = "true"))
 	bool vehicleFrontFogLightsOn = false;
-	UPROPERTY(BlueprintReadOnly, meta = (DisplayName = "Vehicle Foglights active?", AllowPrivateAccess = "true"))
+	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Input", meta = (DisplayName = "Vehicle Foglights active?", AllowPrivateAccess = "true"))
 	bool vehicleRearFogLightsOn = false;
-	UPROPERTY(BlueprintReadOnly, meta = (DisplayName = "Vehicle Parking Lights active?", AllowPrivateAccess = "true"))
+	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Input", meta = (DisplayName = "Vehicle Parking Lights active?", AllowPrivateAccess = "true"))
 	bool vehicleParkingLightsOn = false;
-	UPROPERTY(BlueprintReadOnly, meta = (DisplayName = "Vehicle HeadLights Highbeam active?", AllowPrivateAccess = "true"))
+	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Input", meta = (DisplayName = "Vehicle HeadLights Highbeam active?", AllowPrivateAccess = "true"))
 	bool vehicleHeadLightsHighBeamOn = false;
-	UPROPERTY(BlueprintReadOnly, meta = (DisplayName = "Vehicle Right Turn Indicators active?", AllowPrivateAccess = "true"))
+	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Input", meta = (DisplayName = "Vehicle Right Turn Indicators active?", AllowPrivateAccess = "true"))
 	bool vehicleRightTurnIndicatorsOn = false;
-	UPROPERTY(BlueprintReadOnly, meta = (DisplayName = "Vehicle Left Turn Indicators active?", AllowPrivateAccess = "true"))
+	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Input", meta = (DisplayName = "Vehicle Left Turn Indicators active?", AllowPrivateAccess = "true"))
 	bool vehicleLeftTurnIndicatorsOn = false;
-	UPROPERTY(BlueprintReadOnly, meta = (DisplayName = "Vehicle Low Horn Pressed?", AllowPrivateAccess = "true"))
+	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Input", meta = (DisplayName = "Vehicle Low Horn Pressed?", AllowPrivateAccess = "true"))
 	bool vehicleLowHornPressed = false;
-	UPROPERTY(BlueprintReadOnly, meta = (DisplayName = "Vehicle High Horn Pressed?", AllowPrivateAccess = "true"))
+	UPROPERTY(BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Input", meta = (DisplayName = "Vehicle High Horn Pressed?", AllowPrivateAccess = "true"))
 	bool vehicleHighHornPressed = false;
 
 
 };
 
-USTRUCT(BlueprintType)
+USTRUCT(BlueprintType, Category = "Dynamic Vehicle Movement Component|Miscellanous")
+//Component reference structure for lights based on name
 struct DYNAMICVEHICLEMOVEMENT_API FLightComponentReference :public FComponentReference
 {
 	GENERATED_BODY()
@@ -1304,66 +1345,67 @@ struct DYNAMICVEHICLEMOVEMENT_API FLightComponentReference :public FComponentRef
 	}
 };
 
-USTRUCT(BlueprintType)
+USTRUCT(BlueprintType, Category = "Dynamic Vehicle Movement Component|Lights")
+//Structure containing vehicle light data
 struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleLights
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Use Vehicle Lights"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Lights", meta = (DisplayName = "Use Vehicle Lights"))
 	bool useVehicleLights = true;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle HeadLight Left", EditCondition = "useVehicleLights", UseComponentPicker))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Lights", meta = (DisplayName = "Vehicle HeadLight Left", EditCondition = "useVehicleLights", UseComponentPicker))
 	// Reference to LightComponent using Component Name. 
  	//On Instances, component picker will allow you to pick components from heirarchy 
  	FLightComponentReference headLightLeft ;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle HeadLight Right", EditCondition = "useVehicleLights", UseComponentPicker))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Lights", meta = (DisplayName = "Vehicle HeadLight Right", EditCondition = "useVehicleLights", UseComponentPicker))
 	// Reference to LightComponent using Component Name. 
  	//On Instances, component picker will allow you to pick components from heirarchy 
  	FLightComponentReference headLightRight ;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Fog Light Left", EditCondition = "useVehicleLights", UseComponentPicker))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Lights", meta = (DisplayName = "Vehicle Fog Light Left", EditCondition = "useVehicleLights", UseComponentPicker))
 	// Reference to LightComponent using Component Name. 
  	//On Instances, component picker will allow you to pick components from heirarchy 
  	FLightComponentReference fogLightLeft ;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Fog Light Right", EditCondition = "useVehicleLights", UseComponentPicker))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Lights", meta = (DisplayName = "Vehicle Fog Light Right", EditCondition = "useVehicleLights", UseComponentPicker))
 	// Reference to LightComponent using Component Name. 
  	 //On Instances, component picker will allow you to pick components from heirarchy 
  	FLightComponentReference fogLightRight ;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Rear Light Left", EditCondition = "useVehicleLights", UseComponentPicker))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Lights", meta = (DisplayName = "Vehicle Rear Light Left", EditCondition = "useVehicleLights", UseComponentPicker))
 	// Reference to LightComponent using Component Name. 
  	//On Instances, component picker will allow you to pick components from heirarchy 
  	FLightComponentReference rearLightLeft ;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Rear Light Right", EditCondition = "useVehicleLights", UseComponentPicker))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Lights", meta = (DisplayName = "Vehicle Rear Light Right", EditCondition = "useVehicleLights", UseComponentPicker))
 	// Reference to LightComponent using Component Name. 
  	//On Instances, component picker will allow you to pick components from heirarchy 
  	FLightComponentReference rearLightRight ;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Brake Light Left", EditCondition = "useVehicleLights", UseComponentPicker))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Lights", meta = (DisplayName = "Vehicle Brake Light Left", EditCondition = "useVehicleLights", UseComponentPicker))
 	// Reference to LightComponent using Component Name. 
  	//On Instances, component picker will allow you to pick components from heirarchy 
  	FLightComponentReference brakeLightLeft ;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Brake Light Right", EditCondition = "useVehicleLights", UseComponentPicker))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Lights", meta = (DisplayName = "Vehicle Brake Light Right", EditCondition = "useVehicleLights", UseComponentPicker))
 	// Reference to LightComponent using Component Name. 
  	//On Instances, component picker will allow you to pick components from heirarchy 
  	FLightComponentReference brakeLightRight ;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Fog Light Left Rear", EditCondition = "useVehicleLights", UseComponentPicker))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Lights", meta = (DisplayName = "Vehicle Fog Light Left Rear", EditCondition = "useVehicleLights", UseComponentPicker))
 	// Reference to LightComponent using Component Name. 
  	//On Instances, component picker will allow you to pick components from heirarchy 
 	FLightComponentReference fogLightLeftRear ;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Fog Light Right Rear", EditCondition = "useVehicleLights", UseComponentPicker))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Lights", meta = (DisplayName = "Vehicle Fog Light Right Rear", EditCondition = "useVehicleLights", UseComponentPicker))
 	// Reference to LightComponent using Component Name. 
  	//On Instances, component picker will allow you to pick components from heirarchy 
  	FLightComponentReference fogLightRightRear ;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Turn Light Left", EditCondition = "useVehicleLights", UseComponentPicker))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Lights", meta = (DisplayName = "Vehicle Turn Light Left", EditCondition = "useVehicleLights", UseComponentPicker))
 	// Reference to LightComponent using Component Name. 
  	//On Instances, component picker will allow you to pick components from heirarchy 
  	FLightComponentReference turnLightLeft ;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Turn Light Left Rear", EditCondition = "useVehicleLights", UseComponentPicker))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Lights", meta = (DisplayName = "Vehicle Turn Light Left Rear", EditCondition = "useVehicleLights", UseComponentPicker))
 	// Reference to LightComponent using Component Name. 
  	//On Instances, component picker will allow you to pick components from heirarchy 
  	FLightComponentReference turnLightLeftRear ;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Turn Light Right", EditCondition = "useVehicleLights", UseComponentPicker))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Lights", meta = (DisplayName = "Vehicle Turn Light Right", EditCondition = "useVehicleLights", UseComponentPicker))
 	// Reference to LightComponent using Component Name. 
  	//On Instances, component picker will allow you to pick components from heirarchy 
  	FLightComponentReference turnLightRight ;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement|Lights", meta = (DisplayName = "Vehicle Turn Light Right Rear", EditCondition = "useVehicleLights", UseComponentPicker))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dynamic Vehicle Movement Component|Lights", meta = (DisplayName = "Vehicle Turn Light Right Rear", EditCondition = "useVehicleLights", UseComponentPicker))
 	// Reference to LightComponent using Component Name. 
  	//On Instances, component picker will allow you to pick components from heirarchy 
  	FLightComponentReference turnLightRightRear ;
@@ -1390,56 +1432,58 @@ struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleLights
 	}
 };
 
-USTRUCT(BlueprintType)
+USTRUCT(BlueprintType, Category = "Dynamic Vehicle Movement Component|Sounds")
+//Structure containing vehicle sound data
 struct DYNAMICVEHICLEMOVEMENT_API FDynamicVehicleSounds
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement|Sounds")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement Component|Sounds")
 	bool useEngineSounds = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement|Sounds", meta = (EditCondition = "useEngineSounds"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement Component|Sounds", meta = (EditCondition = "useEngineSounds"))
 	bool useSeparateSoundsPerGear = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement|Sounds", meta = (EditCondition = "useEngineSounds"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement Component|Sounds", meta = (EditCondition = "useEngineSounds"))
 	USoundBase* engineStartupSound;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement|Sounds", meta = (EditCondition = "useEngineSounds"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement Component|Sounds", meta = (EditCondition = "useEngineSounds"))
 	USoundBase* engineStopSound;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement|Sounds" , meta = (EditCondition = "useSeparateSoundsPerGear==true && useEngineSounds"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement Component|Sounds" , meta = (EditCondition = "useSeparateSoundsPerGear==true && useEngineSounds"))
 	TArray<USoundBase*> engineGearWiseSound;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement|Sounds", meta = (EditCondition = "useSeparateSoundsPerGear==false && useEngineSounds"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement Component|Sounds", meta = (EditCondition = "useSeparateSoundsPerGear==false && useEngineSounds"))
 	USoundBase* engineEngagedSound;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement|Sounds", meta = (EditCondition = "useEngineSounds"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement Component|Sounds", meta = (EditCondition = "useEngineSounds"))
 	USoundBase* engineIdleSound;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement|Sounds")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement Component|Sounds")
 	USoundBase* blinkerOnSound;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement|Sounds")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement Component|Sounds")
 	USoundBase* blinkrOffSound;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement|Sounds")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement Component|Sounds")
 	USoundBase* hornSound;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement|Sounds")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement Component|Sounds")
 	USoundBase* wiperOnSound;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement|Sounds")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement Component|Sounds")
 	USoundBase* wiperOffSound;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement|Sounds")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement Component|Sounds")
 	USoundBase* wiperLoopSound;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement|Sounds")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dynamic Vehicle Movement Component|Sounds")
 	USoundBase* brakeSound;
 
 };
 
-UENUM(BlueprintType)
+UENUM(BlueprintType, Category = "Dynamic Vehicle Movement Component|Movement")
+//Vehicle Sliding states
 enum class ESlideDirection:uint8
 {
 	NotSliding = 0,
@@ -1447,7 +1491,8 @@ enum class ESlideDirection:uint8
 	SlidingBackward = 2
 };
 
-UENUM(BlueprintType)
+UENUM(BlueprintType, Category = "Dynamic Vehicle Movement Component|Movement")
+//Vehicle movement states
 enum class EVehicleMovementDirection : uint8
 {
 	None,
